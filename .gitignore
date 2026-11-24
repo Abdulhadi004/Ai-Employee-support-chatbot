@@ -1,0 +1,12 @@
+.env
+venv/
+__pycache__/
+*.pyc
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+backup stage 3/
+.vscode/

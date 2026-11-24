@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Leave</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            padding: 28px 16px;
+            color: #172033;
+            background: #f3f5fa;
+            font-family: "Segoe UI", Arial, sans-serif;
+        }
+        button, input, select, textarea { font: inherit; }
+        button {
+            padding: 10px 14px;
+            border: 0;
+            border-radius: 8px;
+            color: #fff;
+            background: #3457d5;
+            cursor: pointer;
+            font-weight: 650;
+        }
+        input, select, textarea {
+            width: 100%;
+            padding: 10px 11px;
+            border: 1px solid #d5dbea;
+            border-radius: 8px;
+            background: #fff;
+        }
+        label {
+            display: grid;
+            gap: 6px;
+            color: #47516a;
+            font-size: 13px;
+            font-weight: 650;
+        }
+        .shell { width: min(940px, 100%); margin: 0 auto; }
+        .topbar, .panel {
+            border: 1px solid #e3e8f1;
+            border-radius: 13px;
+            background: #fff;
+            box-shadow: 0 4px 16px #28334d08;
+        }
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            padding: 16px 20px;
+            margin-bottom: 18px;
+        }
+        .topbar a { color: #3457d5; text-decoration: none; font-weight: 650; }
+        .panel { padding: 22px; margin-bottom: 18px; }
+        h1 { margin: 0 0 5px; font-size: 25px; }
+        h2 { margin: 0; font-size: 17px; }
+        .muted { color: #778198; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
+        .wide { grid-column: 1 / -1; }
+        .error { color: #b42335; }
+        .success { color: #16804a; }
+        .message { min-height: 20px; margin: 12px 0 0; font-size: 13px; }
+        .hidden { display: none !important; }
+        .list-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 15px; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; }
+        th, td { padding: 12px 10px; border-bottom: 1px solid #edf0f5; }
+        th { color: #778198; font-size: 11px; text-transform: uppercase; }
+        .status { font-weight: 700; text-transform: capitalize; }
+        .status.pending { color: #a9680b; }
+        .status.approved { color: #13744a; }
+        .status.rejected { color: #b42335; }
+        @media (max-width: 580px) {
+            .form-grid { grid-template-columns: 1fr; }
+            .wide { grid-column: auto; }
+            .topbar { align-items: flex-start; flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <main class="shell">
+        <header class="topbar">
+            <div>
+                <h1>My leave</h1>
+                <span id="currentUser" class="muted"></span>
+            </div>
+            <a href="/">Back to chatbot</a>
+        </header>
+
+        <section id="loginPanel" class="panel hidden">
+            <h2>Sign in</h2>
+            <p class="muted">Use your employee account to request leave.</p>
+            <form id="loginForm" class="form-grid">
+                <label>Work email<input name="email" type="email" required autocomplete="username"></label>
+                <label>Password<input name="password" type="password" required autocomplete="current-password"></label>
+                <button class="wide" type="submit">Sign in</button>
+            </form>
+            <p id="loginMessage" class="message" aria-live="polite"></p>
+        </section>
+
+        <section id="requestPanel" class="panel hidden">
+            <h2>Submit a leave request</h2>
+            <p class="muted">Requests remain pending until reviewed by HR.</p>
+            <form id="leaveForm" class="form-grid">
+                <label>
+                    Leave type
+                    <select name="leave_type" required>
+                        <option value="annual">Annual</option>
+                        <option value="sick">Sick</option>
+                        <option value="unpaid">Unpaid</option>
+                    </select>
+                </label>
+                <label>Start date<input name="start_date" type="date" required></label>
+                <label>End date<input name="end_date" type="date" required></label>
+                <label class="wide">Reason (optional)<textarea name="reason" maxlength="500" rows="3"></textarea></label>
+                <button class="wide" type="submit">Send request</button>
+            </form>
+            <p id="requestMessage" class="message" aria-live="polite"></p>
+        </section>
+
+        <section id="requestsPanel" class="panel hidden">
+            <div class="list-heading">
+                <h2>Leave requests</h2>
+                <select id="requestStatus" aria-label="Filter leave requests">
+                    <option value="all">All requests</option>
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                </select>
+            </div>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Type</th>
+                            <th>Dates</th>
+                            <th>Status</th>
+                            <th>Review note</th>
+                        </tr>
+                    </thead>
+                    <tbody id="requestRows">
+                        <tr><td colspan="4" class="muted">No requests yet.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+    <script>
+        let token = sessionStorage.getItem("access_token");
+        const loginPanel = document.getElementById("loginPanel");
+        const requestPanel = document.getElementById("requestPanel");
+        const requestsPanel = document.getElementById("requestsPanel");
+
+        async function apiRequest(path, options = {}) {
+            const headers = { ...(options.headers || {}) };
+            if (options.body) headers["Content-Type"] = "application/json";
+            if (token) headers.Authorization = `Bearer ${token}`;
+            const response = await fetch(path, { ...options, headers });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.detail || "Request failed.");
+            return data;
+        }
+
+        function escapeHtml(value) {
+            const element = document.createElement("span");
+            element.textContent = value == null ? "" : String(value);
+            return element.innerHTML;
+        }
+
+        function showMessage(id, text, isError = false) {
+            const element = document.getElementById(id);
+            element.textContent = text;
+            element.className = `message${text ? (isError ? " error" : " success") : ""}`;
+        }
+
+        async function loadRequests() {
+            const status = document.getElementById("requestStatus").value;
+            const result = await apiRequest(`/leave-requests?status=${status}`);
+            const rows = document.getElementById("requestRows");
+            if (!result.leave_requests.length) {
+                rows.innerHTML = '<tr><td colspan="4" class="muted">No leave requests found.</td></tr>';
+                return;
+            }
+            rows.innerHTML = result.leave_requests.map(item => `
+                <tr>
+                    <td>${escapeHtml(item.leave_type)}</td>
+                    <td>${escapeHtml(item.start_date)} – ${escapeHtml(item.end_date)}</td>
+                    <td><span class="status ${escapeHtml(item.status)}">${escapeHtml(item.status)}</span></td>
+                    <td>${escapeHtml(item.review_note || "—")}</td>
+                </tr>
+            `).join("");
+        }
+
+        async function showUser() {
+            const result = await apiRequest("/me");
+            document.getElementById("currentUser").textContent =
+                `${result.user.email} · ${result.user.role.replaceAll("_", " ")}`;
+            loginPanel.classList.add("hidden");
+            requestPanel.classList.remove("hidden");
+            requestsPanel.classList.remove("hidden");
+            await loadRequests();
+        }
+
+        document.getElementById("loginForm").addEventListener("submit", async event => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            try {
+                const result = await apiRequest("/login", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        email: form.get("email"),
+                        password: form.get("password")
+                    })
+                });
+                token = result.access_token;
+                sessionStorage.setItem("access_token", token);
+                await showUser();
+            } catch (error) {
+                showMessage("loginMessage", error.message, true);
+            }
+        });
+
+        document.getElementById("leaveForm").addEventListener("submit", async event => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            const payload = Object.fromEntries(form.entries());
+            try {
+                await apiRequest("/leave-requests", {
+                    method: "POST",
+                    body: JSON.stringify(payload)
+                });
+                event.currentTarget.reset();
+                showMessage("requestMessage", "Leave request submitted.");
+                await loadRequests();
+            } catch (error) {
+                showMessage("requestMessage", error.message, true);
+            }
+        });
+
+        document.getElementById("requestStatus").addEventListener("change", () => {
+            loadRequests().catch(error => showMessage("requestMessage", error.message, true));
+        });
+
+        if (token) {
+            showUser().catch(error => {
+                token = null;
+                sessionStorage.removeItem("access_token");
+                loginPanel.classList.remove("hidden");
+                showMessage("loginMessage", error.message, true);
+            });
+        } else {
+            loginPanel.classList.remove("hidden");
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,1519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>People Admin</title>
+    <style>
+        :root {
+            color-scheme: light;
+            font-family: Inter, "Segoe UI", Arial, sans-serif;
+            color: #172033;
+            background: #f3f5fa;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+        }
+
+        button,
+        input,
+        select {
+            font: inherit;
+        }
+
+        button {
+            border: 0;
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: #fff;
+            background: #3457d5;
+            cursor: pointer;
+            font-weight: 650;
+        }
+
+        button:hover {
+            background: #2847b7;
+        }
+
+        button:disabled {
+            cursor: wait;
+            opacity: .65;
+        }
+
+        input,
+        select {
+            width: 100%;
+            min-height: 42px;
+            padding: 9px 11px;
+            border: 1px solid #d5dbea;
+            border-radius: 8px;
+            color: #172033;
+            background: #fff;
+        }
+
+        input:focus,
+        select:focus {
+            outline: 3px solid #dce5ff;
+            border-color: #5474df;
+        }
+
+        label {
+            display: grid;
+            gap: 6px;
+            color: #47516a;
+            font-size: 13px;
+            font-weight: 650;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .login-shell {
+            display: grid;
+            min-height: 100vh;
+            place-items: center;
+            padding: 24px;
+            background:
+                radial-gradient(circle at 15% 15%, #e1e9ff 0, transparent 34%),
+                #f3f5fa;
+        }
+
+        .login-card {
+            width: min(420px, 100%);
+            padding: 34px;
+            border: 1px solid #e1e6f0;
+            border-radius: 16px;
+            background: #fff;
+            box-shadow: 0 18px 55px #25365e16;
+        }
+
+        .brand-mark {
+            display: grid;
+            width: 44px;
+            height: 44px;
+            margin-bottom: 22px;
+            place-items: center;
+            border-radius: 12px;
+            color: #fff;
+            background: #3457d5;
+            font-weight: 800;
+        }
+
+        h1,
+        h2,
+        p {
+            margin-top: 0;
+        }
+
+        .login-card h1 {
+            margin-bottom: 8px;
+            font-size: 25px;
+        }
+
+        .muted {
+            color: #778198;
+        }
+
+        .login-form {
+            display: grid;
+            gap: 16px;
+            margin-top: 26px;
+        }
+
+        .login-form button {
+            min-height: 44px;
+            margin-top: 4px;
+        }
+
+        .message {
+            min-height: 20px;
+            margin: 14px 0 0;
+            font-size: 13px;
+        }
+
+        .message.error {
+            color: #b42335;
+        }
+
+        .message.success {
+            color: #16804a;
+        }
+
+        .topbar {
+            display: flex;
+            min-height: 72px;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            padding: 12px max(24px, calc((100% - 1440px) / 2));
+            border-bottom: 1px solid #e4e8f0;
+            background: #fff;
+        }
+
+        .topbar-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 15px;
+            font-weight: 750;
+        }
+
+        .topbar-brand .brand-mark {
+            width: 36px;
+            height: 36px;
+            margin: 0;
+            border-radius: 10px;
+            font-size: 13px;
+        }
+
+        .account {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .account-meta {
+            display: grid;
+            gap: 3px;
+            text-align: right;
+            font-size: 13px;
+        }
+
+        .role-badge {
+            color: #53617a;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+        }
+
+        .button-secondary {
+            color: #34405a;
+            border: 1px solid #d8deea;
+            background: #fff;
+        }
+
+        .button-secondary:hover {
+            background: #f5f7fb;
+        }
+
+        main {
+            width: min(1440px, 100%);
+            margin: 0 auto;
+            padding: 34px 24px 54px;
+        }
+
+        .page-heading {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 18px;
+            margin-bottom: 24px;
+        }
+
+        .page-heading h1 {
+            margin-bottom: 7px;
+            font-size: clamp(24px, 3vw, 32px);
+            letter-spacing: -.03em;
+        }
+
+        .page-heading p {
+            margin-bottom: 0;
+            color: #778198;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card,
+        .panel {
+            border: 1px solid #e3e8f1;
+            border-radius: 13px;
+            background: #fff;
+            box-shadow: 0 4px 16px #28334d08;
+        }
+
+        .stat-card {
+            padding: 18px 20px;
+        }
+
+        .stat-label {
+            color: #778198;
+            font-size: 13px;
+        }
+
+        .stat-value {
+            display: block;
+            margin-top: 10px;
+            font-size: 29px;
+            font-weight: 750;
+            letter-spacing: -.03em;
+        }
+
+        .toolbar {
+            display: grid;
+            grid-template-columns: minmax(220px, 1fr) minmax(150px, 210px) minmax(130px, 170px) auto;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.7fr) minmax(300px, .8fr);
+            align-items: start;
+            gap: 18px;
+        }
+
+        .hr-management-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            align-items: start;
+            gap: 18px;
+            margin-top: 18px;
+        }
+
+        .report-panel {
+            grid-column: 1 / -1;
+        }
+
+        .panel {
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .registration-panel {
+            margin-bottom: 20px;
+        }
+
+        dialog {
+            width: min(520px, calc(100% - 24px));
+            padding: 0;
+            border: 1px solid #e3e8f1;
+            border-radius: 14px;
+            color: #172033;
+            box-shadow: 0 24px 70px #17203333;
+        }
+
+        dialog::backdrop {
+            background: #17203388;
+        }
+
+        .dialog-content {
+            display: grid;
+            gap: 16px;
+            padding: 22px;
+        }
+
+        .dialog-content h2,
+        .dialog-content p {
+            margin: 0;
+        }
+
+        .panel-heading {
+            display: flex;
+            min-height: 66px;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 16px 19px;
+            border-bottom: 1px solid #edf0f5;
+        }
+
+        .panel-heading h2 {
+            margin: 0;
+            font-size: 16px;
+        }
+
+        .panel-heading span {
+            color: #8992a5;
+            font-size: 12px;
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 13px;
+        }
+
+        th,
+        td {
+            padding: 13px 15px;
+            border-bottom: 1px solid #edf0f5;
+            white-space: nowrap;
+        }
+
+        th {
+            color: #7a849a;
+            background: #fafbfe;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: .04em;
+            text-transform: uppercase;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: 0;
+        }
+
+        .employee-name {
+            font-weight: 700;
+        }
+
+        .subtext {
+            display: block;
+            margin-top: 4px;
+            color: #8992a5;
+            font-size: 11px;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 8px;
+            border-radius: 20px;
+            color: #13744a;
+            background: #e8f7ef;
+            font-size: 11px;
+            font-weight: 700;
+        }
+
+        .status-pill.inactive {
+            color: #737b8d;
+            background: #eef0f4;
+        }
+
+        .actions {
+            display: flex;
+            gap: 7px;
+        }
+
+        .small-button {
+            padding: 7px 9px;
+            font-size: 11px;
+        }
+
+        .danger-button {
+            color: #a42a36;
+            border: 1px solid #f0ccd0;
+            background: #fff;
+        }
+
+        .danger-button:hover {
+            background: #fff4f5;
+        }
+
+        .empty-row {
+            padding: 34px 16px;
+            color: #8992a5;
+            text-align: center;
+        }
+
+        .employee-form {
+            display: grid;
+            gap: 14px;
+            padding: 18px;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .department-add {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+        }
+
+        .department-add input {
+            min-width: 0;
+        }
+
+        .department-add button {
+            padding-inline: 12px;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 2px;
+        }
+
+        .form-actions button {
+            flex: 1;
+        }
+
+        @media (max-width: 1000px) {
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .hr-management-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .report-panel {
+                grid-column: auto;
+            }
+        }
+
+        @media (max-width: 720px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .toolbar {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .toolbar input {
+                grid-column: 1 / -1;
+            }
+
+            .page-heading {
+                align-items: flex-start;
+                flex-direction: column;
+            }
+
+            .topbar {
+                padding-inline: 16px;
+            }
+
+            main {
+                padding: 24px 16px 40px;
+            }
+        }
+
+        @media (max-width: 430px) {
+            .stats-grid {
+                gap: 10px;
+            }
+
+            .stat-card {
+                padding: 14px;
+            }
+
+            .account-meta {
+                display: none;
+            }
+
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <section id="loginView" class="login-shell">
+        <div class="login-card">
+            <div class="brand-mark" aria-hidden="true">HR</div>
+            <h1>People Admin</h1>
+            <p class="muted">Sign in with your HR Admin or Super Admin account.</p>
+            <form id="loginForm" class="login-form">
+                <label>
+                    Work email
+                    <input id="loginEmail" name="email" type="email" autocomplete="username" required>
+                </label>
+                <label>
+                    Password
+                    <input id="loginPassword" name="password" type="password" autocomplete="current-password" required>
+                </label>
+                <button id="loginButton" type="submit">Sign in</button>
+            </form>
+            <p id="loginMessage" class="message" role="status" aria-live="polite"></p>
+        </div>
+    </section>
+
+    <section id="dashboardView" class="hidden">
+        <header class="topbar">
+            <div class="topbar-brand">
+                <span class="brand-mark" aria-hidden="true">HR</span>
+                <span>People Admin</span>
+            </div>
+            <div class="account">
+                <div class="account-meta">
+                    <strong id="accountEmail"></strong>
+                    <span id="accountRole" class="role-badge"></span>
+                </div>
+                <button id="logoutButton" class="button-secondary" type="button">Sign out</button>
+            </div>
+        </header>
+
+        <main>
+            <div class="page-heading">
+                <div>
+                    <h1>Employee directory</h1>
+                    <p>Manage your people, departments, and employee records.</p>
+                </div>
+            </div>
+
+            <section class="stats-grid" aria-label="Employee statistics">
+                <article class="stat-card">
+                    <span class="stat-label">Total employees</span>
+                    <strong id="totalEmployees" class="stat-value">0</strong>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Active employees</span>
+                    <strong id="activeEmployees" class="stat-value">0</strong>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Departments</span>
+                    <strong id="departmentCount" class="stat-value">0</strong>
+                </article>
+                <article class="stat-card">
+                    <span class="stat-label">Inactive employees</span>
+                    <strong id="inactiveEmployees" class="stat-value">0</strong>
+                </article>
+            </section>
+
+            <section class="panel registration-panel" aria-labelledby="registrationTitle">
+                <div class="panel-heading">
+                    <div>
+                        <h2 id="registrationTitle">Employee onboarding</h2>
+                        <span id="registrationCount">Loading registration requests...</span>
+                    </div>
+                    <select id="registrationStatusFilter" aria-label="Filter onboarding requests">
+                        <option value="pending">Pending review</option>
+                        <option value="all">All requests</option>
+                        <option value="approved">Approved</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Submitted</th>
+                                <th>Name</th>
+                                <th>Work email</th>
+                                <th>Phone</th>
+                                <th>Status</th>
+                                <th>Review</th>
+                            </tr>
+                        </thead>
+                        <tbody id="registrationRows">
+                            <tr><td class="empty-row" colspan="6">Sign in to load onboarding requests.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <div class="toolbar">
+                <input id="searchInput" type="search" placeholder="Search name, email, title, or ID" aria-label="Search employees">
+                <select id="departmentFilter" aria-label="Filter by department">
+                    <option value="">All departments</option>
+                </select>
+                <select id="statusFilter" aria-label="Filter by employee status">
+                    <option value="active">Active employees</option>
+                    <option value="inactive">Inactive employees</option>
+                    <option value="all">All employees</option>
+                </select>
+                <button id="refreshButton" class="button-secondary" type="button">Refresh</button>
+            </div>
+
+            <div class="content-grid">
+                <section class="panel" aria-labelledby="directoryTitle">
+                    <div class="panel-heading">
+                        <h2 id="directoryTitle">Directory</h2>
+                        <span id="employeeCount">0 employees</span>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Employee</th>
+                                    <th>Department</th>
+                                    <th>Job title</th>
+                                    <th>Hire date</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="employeeRows">
+                                <tr><td class="empty-row" colspan="6">Sign in to load employee records.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="panel" aria-labelledby="employeeFormTitle">
+                    <div class="panel-heading">
+                        <h2 id="employeeFormTitle">Add employee</h2>
+                        <span>Required fields marked by browser validation</span>
+                    </div>
+                    <form id="employeeForm" class="employee-form">
+                        <div class="form-row">
+                            <label>
+                                Employee ID
+                                <input name="employee_code" maxlength="32" required>
+                            </label>
+                            <label>
+                                Hire date
+                                <input name="hire_date" type="date" required>
+                            </label>
+                        </div>
+                        <div class="form-row">
+                            <label>
+                                First name
+                                <input name="first_name" maxlength="80" autocomplete="given-name" required>
+                            </label>
+                            <label>
+                                Last name
+                                <input name="last_name" maxlength="80" autocomplete="family-name" required>
+                            </label>
+                        </div>
+                        <label>
+                            Work email
+                            <input name="email" type="email" maxlength="254" autocomplete="email" required>
+                        </label>
+                        <label>
+                            Department
+                            <select name="department_id" id="employeeDepartment" required>
+                                <option value="">Add a department first</option>
+                            </select>
+                        </label>
+                        <div class="department-add">
+                            <input id="newDepartmentName" maxlength="80" placeholder="New department name" aria-label="New department name">
+                            <button id="addDepartmentButton" type="button">Add dept.</button>
+                        </div>
+                        <label>
+                            Job title
+                            <input name="job_title" maxlength="100" required>
+                        </label>
+                        <label>
+                            Phone (optional)
+                            <input name="phone" type="tel" maxlength="32" autocomplete="tel">
+                        </label>
+                        <div class="form-actions">
+                            <button id="saveEmployeeButton" type="submit">Save employee</button>
+                            <button id="cancelEditButton" class="button-secondary hidden" type="button">Cancel</button>
+                        </div>
+                        <p id="dashboardMessage" class="message" role="status" aria-live="polite"></p>
+                    </form>
+                </section>
+            </div>
+
+            <div class="hr-management-grid">
+                <section class="panel" aria-labelledby="leaveRequestsTitle">
+                    <div class="panel-heading">
+                        <h2 id="leaveRequestsTitle">Leave requests</h2>
+                        <select id="leaveStatusFilter" aria-label="Filter leave requests">
+                            <option value="pending">Pending</option>
+                            <option value="all">All requests</option>
+                            <option value="approved">Approved</option>
+                            <option value="rejected">Rejected</option>
+                        </select>
+                    </div>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Employee</th>
+                                    <th>Leave</th>
+                                    <th>Dates</th>
+                                    <th>Status</th>
+                                    <th>Review</th>
+                                </tr>
+                            </thead>
+                            <tbody id="leaveRows">
+                                <tr><td class="empty-row" colspan="5">Loading leave requests...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="panel" aria-labelledby="attendanceTitle">
+                    <div class="panel-heading">
+                        <h2 id="attendanceTitle">Attendance</h2>
+                        <input id="attendanceDate" type="date" aria-label="Attendance date">
+                    </div>
+                    <form id="attendanceForm" class="employee-form">
+                        <label>
+                            Employee
+                            <select name="employee_id" id="attendanceEmployee" required>
+                                <option value="">Select an employee</option>
+                            </select>
+                        </label>
+                        <div class="form-row">
+                            <label>
+                                Status
+                                <select name="status" required>
+                                    <option value="present">Present</option>
+                                    <option value="remote">Remote</option>
+                                    <option value="absent">Absent</option>
+                                    <option value="leave">On leave</option>
+                                    <option value="holiday">Holiday</option>
+                                </select>
+                            </label>
+                            <label>
+                                Check-in
+                                <input name="check_in" type="time">
+                            </label>
+                        </div>
+                        <div class="form-row">
+                            <label>
+                                Check-out
+                                <input name="check_out" type="time">
+                            </label>
+                            <label>
+                                Note
+                                <input name="note" maxlength="500">
+                            </label>
+                        </div>
+                        <button type="submit">Save attendance</button>
+                    </form>
+                    <div class="table-wrap">
+                        <table>
+                            <thead>
+                                <tr><th>Employee</th><th>Status</th><th>Hours</th></tr>
+                            </thead>
+                            <tbody id="attendanceRows">
+                                <tr><td class="empty-row" colspan="3">No records for this date.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <section class="panel report-panel" aria-labelledby="reportTitle">
+                    <div class="panel-heading">
+                        <h2 id="reportTitle">HR summary report</h2>
+                        <div class="actions">
+                            <input id="reportStartDate" type="date" aria-label="Report start date">
+                            <input id="reportEndDate" type="date" aria-label="Report end date">
+                            <button id="runReportButton" type="button">Run report</button>
+                        </div>
+                    </div>
+                    <div id="reportSummary" class="employee-form muted">Choose a date range to view leave and attendance summaries.</div>
+                </section>
+            </div>
+        </main>
+    </section>
+
+    <dialog id="registrationDialog">
+        <form id="registrationApprovalForm" class="dialog-content">
+            <div>
+                <h2>Verify employee details</h2>
+                <p id="registrationIdentity" class="muted"></p>
+            </div>
+            <input id="registrationId" type="hidden">
+            <label>
+                Verified first name
+                <input id="registrationFirstName" maxlength="80" required>
+            </label>
+            <label>
+                Verified last name
+                <input id="registrationLastName" maxlength="80" required>
+            </label>
+            <label>
+                Official employee ID
+                <input id="registrationEmployeeCode" maxlength="32" required>
+            </label>
+            <label>
+                Department
+                <select id="registrationDepartment" required>
+                    <option value="">Loading departments...</option>
+                </select>
+            </label>
+            <p class="muted">If the department is not listed, add it here. It will be selected automatically.</p>
+            <div class="department-add">
+                <input id="registrationNewDepartmentName" maxlength="80"
+                    placeholder="Add a department" aria-label="New department name">
+                <button id="addRegistrationDepartmentButton" type="button">Add dept.</button>
+            </div>
+            <label>
+                Verified job title
+                <input id="registrationJobTitle" maxlength="100" required>
+            </label>
+            <label>
+                Hire date
+                <input id="registrationHireDate" type="date" required>
+            </label>
+            <div class="form-actions">
+                <button type="submit">Approve and add to directory</button>
+                <button id="cancelRegistrationReview" class="button-secondary" type="button">Cancel</button>
+            </div>
+            <p id="registrationReviewMessage" class="message" aria-live="polite"></p>
+        </form>
+    </dialog>
+
+    <script>
+        const tokenKey = "hr_admin_access_token";
+        let token = sessionStorage.getItem(tokenKey);
+        let employees = [];
+        let registrations = [];
+        let editingEmployeeId = null;
+        let searchTimer = null;
+
+        const loginView = document.getElementById("loginView");
+        const dashboardView = document.getElementById("dashboardView");
+        const loginForm = document.getElementById("loginForm");
+        const loginMessage = document.getElementById("loginMessage");
+        const employeeForm = document.getElementById("employeeForm");
+        const dashboardMessage = document.getElementById("dashboardMessage");
+
+        function escapeHtml(value) {
+            const element = document.createElement("span");
+            element.textContent = value == null ? "" : String(value);
+            return element.innerHTML;
+        }
+
+        function setMessage(element, message, isError = false) {
+            element.textContent = message;
+            element.className = `message${message ? (isError ? " error" : " success") : ""}`;
+        }
+
+        async function apiRequest(path, options = {}) {
+            const headers = { ...(options.headers || {}) };
+            if (options.body) {
+                headers["Content-Type"] = "application/json";
+            }
+            if (token) {
+                headers.Authorization = `Bearer ${token}`;
+            }
+
+            const response = await fetch(path, { ...options, headers });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                if (response.status === 401) {
+                    clearSession();
+                    showLogin();
+                }
+                throw new Error(data.detail || "Request failed.");
+            }
+            return data;
+        }
+
+        function showLogin(message = "") {
+            loginView.classList.remove("hidden");
+            dashboardView.classList.add("hidden");
+            setMessage(loginMessage, message, Boolean(message));
+        }
+
+        function showDashboard(user) {
+            loginView.classList.add("hidden");
+            dashboardView.classList.remove("hidden");
+            document.getElementById("accountEmail").textContent = user.email;
+            document.getElementById("accountRole").textContent =
+                user.role.replaceAll("_", " ");
+        }
+
+        function clearSession() {
+            token = null;
+            sessionStorage.removeItem(tokenKey);
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            const button = document.getElementById("loginButton");
+            button.disabled = true;
+            setMessage(loginMessage, "");
+
+            try {
+                const form = new FormData(loginForm);
+                const result = await apiRequest("/login", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        email: form.get("email"),
+                        password: form.get("password")
+                    })
+                });
+
+                if (!["hr_admin", "super_admin"].includes(result.user.role)) {
+                    throw new Error("This dashboard is available to HR Admins and Super Admins only.");
+                }
+
+                token = result.access_token;
+                sessionStorage.setItem(tokenKey, token);
+                showDashboard(result.user);
+                await loadDashboard();
+            } catch (error) {
+                clearSession();
+                showLogin(error.message);
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function restoreSession() {
+            if (!token) {
+                showLogin();
+                return;
+            }
+            try {
+                const result = await apiRequest("/me");
+                if (!["hr_admin", "super_admin"].includes(result.user.role)) {
+                    clearSession();
+                    showLogin("This dashboard is available to HR Admins and Super Admins only.");
+                    return;
+                }
+                showDashboard(result.user);
+                await loadDashboard();
+            } catch (error) {
+                clearSession();
+                showLogin(error.message);
+            }
+        }
+
+        async function loadDashboard() {
+            setMessage(dashboardMessage, "");
+            const params = new URLSearchParams();
+            const search = document.getElementById("searchInput").value.trim();
+            const departmentId = document.getElementById("departmentFilter").value;
+            const status = document.getElementById("statusFilter").value;
+            const registrationStatus = document.getElementById("registrationStatusFilter").value;
+            if (search) params.set("search", search);
+            if (departmentId) params.set("department_id", departmentId);
+            if (status) params.set("status", status);
+
+            const [stats, departmentData, employeeData, registrationData] = await Promise.all([
+                apiRequest("/admin/dashboard/stats"),
+                apiRequest("/admin/departments"),
+                apiRequest(`/admin/employees?${params.toString()}`),
+                apiRequest(`/admin/employee-registrations?status=${registrationStatus}`)
+            ]);
+
+            document.getElementById("totalEmployees").textContent = stats.total_employees;
+            document.getElementById("activeEmployees").textContent = stats.active_employees;
+            document.getElementById("departmentCount").textContent = stats.department_count;
+            document.getElementById("inactiveEmployees").textContent = stats.inactive_employees;
+
+            renderDepartments(departmentData.departments);
+            employees = employeeData.employees;
+            renderEmployees();
+            registrations = registrationData.registrations;
+            renderRegistrations();
+            await loadHrManagement();
+        }
+
+        function localDateString(date = new Date()) {
+            const offset = date.getTimezoneOffset() * 60000;
+            return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+        }
+
+        async function loadHrManagement() {
+            const today = localDateString();
+            const attendanceDate = document.getElementById("attendanceDate");
+            const reportStartDate = document.getElementById("reportStartDate");
+            const reportEndDate = document.getElementById("reportEndDate");
+            if (!attendanceDate.value) attendanceDate.value = today;
+            if (!reportEndDate.value) reportEndDate.value = today;
+            if (!reportStartDate.value) {
+                reportStartDate.value = `${today.slice(0, 7)}-01`;
+            }
+
+            const leaveStatus = document.getElementById("leaveStatusFilter").value;
+            const activeEmployees = apiRequest("/admin/employees?status=active");
+            const leaveRequests = apiRequest(`/leave-requests?status=${leaveStatus}`);
+            const attendance = apiRequest(
+                `/admin/attendance?date=${encodeURIComponent(attendanceDate.value)}`
+            );
+            const report = fetchReport();
+            const [employeeData, leaveData, attendanceData, reportData] =
+                await Promise.all([
+                    activeEmployees,
+                    leaveRequests,
+                    attendance,
+                    report
+                ]);
+
+            renderAttendanceEmployees(employeeData.employees);
+            renderLeaveRequests(leaveData.leave_requests);
+            renderAttendance(attendanceData.attendance);
+            renderReport(reportData);
+        }
+
+        function renderLeaveRequests(requests) {
+            const rows = document.getElementById("leaveRows");
+            if (!requests.length) {
+                rows.innerHTML = '<tr><td class="empty-row" colspan="5">No leave requests found.</td></tr>';
+                return;
+            }
+
+            rows.innerHTML = requests.map(request => `
+                <tr>
+                    <td>
+                        <span class="employee-name">${escapeHtml(request.first_name)} ${escapeHtml(request.last_name)}</span>
+                        <span class="subtext">${escapeHtml(request.employee_code)} · ${escapeHtml(request.email)}</span>
+                    </td>
+                    <td>${escapeHtml(request.leave_type)}</td>
+                    <td>${escapeHtml(request.start_date)} – ${escapeHtml(request.end_date)}</td>
+                    <td><span class="status-pill${request.status === "pending" ? " inactive" : ""}">${escapeHtml(request.status)}</span></td>
+                    <td>
+                        ${request.status === "pending" ? `
+                            <div class="actions">
+                                <button class="small-button" data-leave-decision="approved" data-id="${request.id}" type="button">Approve</button>
+                                <button class="small-button danger-button" data-leave-decision="rejected" data-id="${request.id}" type="button">Reject</button>
+                            </div>
+                        ` : escapeHtml(request.review_note || "—")}
+                    </td>
+                </tr>
+            `).join("");
+        }
+
+        function renderAttendanceEmployees(employeeList) {
+            const select = document.getElementById("attendanceEmployee");
+            const selected = select.value;
+            select.innerHTML = '<option value="">Select an employee</option>' +
+                employeeList.map(employee =>
+                    `<option value="${employee.id}">${escapeHtml(employee.employee_code)} · ${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</option>`
+                ).join("");
+            if (employeeList.some(employee => String(employee.id) === selected)) {
+                select.value = selected;
+            }
+        }
+
+        function renderAttendance(records) {
+            const rows = document.getElementById("attendanceRows");
+            if (!records.length) {
+                rows.innerHTML = '<tr><td class="empty-row" colspan="3">No records for this date.</td></tr>';
+                return;
+            }
+
+            rows.innerHTML = records.map(record => `
+                <tr>
+                    <td>${escapeHtml(record.employee_code)} · ${escapeHtml(record.first_name)} ${escapeHtml(record.last_name)}</td>
+                    <td>${escapeHtml(record.status)}</td>
+                    <td>${escapeHtml(record.check_in || "—")} – ${escapeHtml(record.check_out || "—")}</td>
+                </tr>
+            `).join("");
+        }
+
+        async function fetchReport() {
+            const startDate = document.getElementById("reportStartDate").value;
+            const endDate = document.getElementById("reportEndDate").value;
+            if (!startDate || !endDate) return null;
+            const params = new URLSearchParams({
+                start_date: startDate,
+                end_date: endDate
+            });
+            return apiRequest(`/admin/reports/summary?${params.toString()}`);
+        }
+
+        function renderReport(report) {
+            const summary = document.getElementById("reportSummary");
+            if (!report) {
+                summary.textContent = "Choose a start and end date to run a report.";
+                return;
+            }
+
+            const leaveLines = Object.entries(report.leave_by_status || {});
+            const attendanceLines = Object.entries(report.attendance_by_status || {});
+            const departments = report.active_employees_by_department || [];
+            summary.classList.remove("muted");
+            summary.innerHTML = `
+                <p><strong>Period:</strong> ${escapeHtml(report.start_date)} – ${escapeHtml(report.end_date)}</p>
+                <div class="form-row">
+                    <div><strong>Leave requests</strong><ul>${leaveLines.length
+                        ? leaveLines.map(([key, value]) => `<li>${escapeHtml(key)}: ${value}</li>`).join("")
+                        : "<li>No requests in this period</li>"}</ul></div>
+                    <div><strong>Attendance records</strong><ul>${attendanceLines.length
+                        ? attendanceLines.map(([key, value]) => `<li>${escapeHtml(key)}: ${value}</li>`).join("")
+                        : "<li>No records in this period</li>"}</ul></div>
+                </div>
+                <strong>Active employees by department</strong>
+                <ul>${departments.length
+                    ? departments.map(item => `<li>${escapeHtml(item.name)}: ${item.employee_count}</li>`).join("")
+                    : "<li>No departments</li>"}</ul>
+            `;
+        }
+
+        async function reviewLeaveRequest(event) {
+            const button = event.target.closest("button[data-leave-decision]");
+            if (!button) return;
+            const decision = button.dataset.leaveDecision;
+            if (!window.confirm(`${decision === "approved" ? "Approve" : "Reject"} this leave request?`)) {
+                return;
+            }
+
+            try {
+                await apiRequest(`/admin/leave-requests/${button.dataset.id}/decision`, {
+                    method: "PATCH",
+                    body: JSON.stringify({ status: decision })
+                });
+                await loadHrManagement();
+                setMessage(dashboardMessage, `Leave request ${decision}.`);
+            } catch (error) {
+                setMessage(dashboardMessage, error.message, true);
+            }
+        }
+
+        async function saveAttendance(event) {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            const payload = Object.fromEntries(form.entries());
+            payload.employee_id = Number(payload.employee_id);
+            payload.attendance_date = document.getElementById("attendanceDate").value;
+            payload.check_in = payload.check_in || null;
+            payload.check_out = payload.check_out || null;
+            payload.note = payload.note.trim() || null;
+
+            try {
+                await apiRequest("/admin/attendance", {
+                    method: "PUT",
+                    body: JSON.stringify(payload)
+                });
+                await loadHrManagement();
+                setMessage(dashboardMessage, "Attendance saved.");
+            } catch (error) {
+                setMessage(dashboardMessage, error.message, true);
+            }
+        }
+
+        async function runReport() {
+            try {
+                const report = await fetchReport();
+                renderReport(report);
+            } catch (error) {
+                setMessage(dashboardMessage, error.message, true);
+            }
+        }
+
+        function renderDepartments(departments) {
+            const filter = document.getElementById("departmentFilter");
+            const employeeDepartment = document.getElementById("employeeDepartment");
+            const registrationDepartment = document.getElementById("registrationDepartment");
+            const selectedFilter = filter.value;
+            const selectedDepartment = employeeDepartment.value;
+            const selectedRegistrationDepartment = registrationDepartment.value;
+
+            filter.innerHTML = '<option value="">All departments</option>' +
+                departments.map(department =>
+                    `<option value="${department.id}">${escapeHtml(department.name)}</option>`
+                ).join("");
+
+            employeeDepartment.innerHTML = departments.length
+                ? '<option value="">Select a department</option>' + departments.map(department =>
+                    `<option value="${department.id}">${escapeHtml(department.name)}</option>`
+                ).join("")
+                : '<option value="">Add a department first</option>';
+
+            registrationDepartment.innerHTML = departments.length
+                ? '<option value="">Select a department</option>' + departments.map(department =>
+                    `<option value="${department.id}">${escapeHtml(department.name)}</option>`
+                ).join("")
+                : '<option value="">Add a department first</option>';
+
+            if (departments.some(department => String(department.id) === selectedFilter)) {
+                filter.value = selectedFilter;
+            }
+            if (departments.some(department => String(department.id) === selectedDepartment)) {
+                employeeDepartment.value = selectedDepartment;
+            }
+            if (departments.some(department =>
+                    String(department.id) === selectedRegistrationDepartment)) {
+                registrationDepartment.value = selectedRegistrationDepartment;
+            }
+        }
+
+        function renderRegistrations() {
+            const rows = document.getElementById("registrationRows");
+            const pendingCount = registrations.filter(
+                registration => registration.status === "pending"
+            ).length;
+            document.getElementById("registrationCount").textContent =
+                `${pendingCount} pending · ${registrations.length} shown`;
+
+            if (!registrations.length) {
+                rows.innerHTML = '<tr><td class="empty-row" colspan="6">No registration requests found.</td></tr>';
+                return;
+            }
+
+            rows.innerHTML = registrations.map(registration => `
+                <tr>
+                    <td>${escapeHtml(registration.submitted_at.slice(0, 10))}</td>
+                    <td>${escapeHtml(registration.first_name)} ${escapeHtml(registration.last_name)}</td>
+                    <td>${escapeHtml(registration.email)}</td>
+                    <td>${escapeHtml(registration.phone || "—")}</td>
+                    <td><span class="status-pill${registration.status === "pending" ? " inactive" : ""}">${escapeHtml(registration.status)}</span></td>
+                    <td>
+                        ${registration.status === "pending" ? `
+                            <div class="actions">
+                                <button class="small-button" data-registration-action="review" data-id="${registration.id}" type="button">Verify</button>
+                                <button class="small-button danger-button" data-registration-action="reject" data-id="${registration.id}" type="button">Reject</button>
+                            </div>
+                        ` : escapeHtml(registration.rejection_note || "—")}
+                    </td>
+                </tr>
+            `).join("");
+        }
+
+        function openRegistrationReview(registration) {
+            document.getElementById("registrationId").value = registration.id;
+            document.getElementById("registrationIdentity").textContent =
+                `${registration.first_name} ${registration.last_name} · ${registration.email}`;
+            document.getElementById("registrationFirstName").value = registration.first_name;
+            document.getElementById("registrationLastName").value = registration.last_name;
+            document.getElementById("registrationEmployeeCode").value =
+                `EMP-${String(registration.id).padStart(4, "0")}`;
+            document.getElementById("registrationDepartment").value = "";
+            document.getElementById("registrationJobTitle").value = "";
+            document.getElementById("registrationHireDate").value = "";
+            setMessage(document.getElementById("registrationReviewMessage"), "");
+            document.getElementById("registrationDialog").showModal();
+        }
+
+        async function handleRegistrationAction(event) {
+            const button = event.target.closest("button[data-registration-action]");
+            if (!button) return;
+
+            const registration = registrations.find(
+                item => String(item.id) === button.dataset.id
+            );
+            if (!registration) return;
+
+            if (button.dataset.registrationAction === "review") {
+                openRegistrationReview(registration);
+                return;
+            }
+
+            if (button.dataset.registrationAction === "reject" &&
+                    window.confirm(`Reject ${registration.first_name} ${registration.last_name}'s employee registration?`)) {
+                try {
+                    await apiRequest(
+                        `/admin/employee-registrations/${registration.id}/reject`,
+                        {
+                            method: "POST",
+                            body: JSON.stringify({})
+                        }
+                    );
+                    await loadDashboard();
+                    setMessage(dashboardMessage, "Registration rejected.");
+                } catch (error) {
+                    setMessage(dashboardMessage, error.message, true);
+                }
+            }
+        }
+
+        async function approveRegistration(event) {
+            event.preventDefault();
+            const registrationId = document.getElementById("registrationId").value;
+            const payload = {
+                first_name: document.getElementById("registrationFirstName").value.trim(),
+                last_name: document.getElementById("registrationLastName").value.trim(),
+                employee_code: document.getElementById("registrationEmployeeCode").value.trim(),
+                department_id: Number(document.getElementById("registrationDepartment").value),
+                job_title: document.getElementById("registrationJobTitle").value.trim(),
+                hire_date: document.getElementById("registrationHireDate").value
+            };
+
+            try {
+                await apiRequest(
+                    `/admin/employee-registrations/${registrationId}/approve`,
+                    {
+                        method: "POST",
+                        body: JSON.stringify(payload)
+                    }
+                );
+                document.getElementById("registrationDialog").close();
+                await loadDashboard();
+                setMessage(dashboardMessage, "Employee verified and added to the directory.");
+            } catch (error) {
+                setMessage(
+                    document.getElementById("registrationReviewMessage"),
+                    error.message,
+                    true
+                );
+            }
+        }
+
+        function renderEmployees() {
+            const rows = document.getElementById("employeeRows");
+            document.getElementById("employeeCount").textContent =
+                `${employees.length} ${employees.length === 1 ? "employee" : "employees"}`;
+
+            if (!employees.length) {
+                rows.innerHTML = '<tr><td class="empty-row" colspan="6">No employees match these filters.</td></tr>';
+                return;
+            }
+
+            rows.innerHTML = employees.map(employee => `
+                <tr>
+                    <td>
+                        <span class="employee-name">${escapeHtml(employee.first_name)} ${escapeHtml(employee.last_name)}</span>
+                        <span class="subtext">${escapeHtml(employee.employee_code)} · ${escapeHtml(employee.email)}</span>
+                    </td>
+                    <td>${escapeHtml(employee.department_name)}</td>
+                    <td>${escapeHtml(employee.job_title)}</td>
+                    <td>${escapeHtml(employee.hire_date)}</td>
+                    <td><span class="status-pill${employee.is_active ? "" : " inactive"}">${employee.is_active ? "Active" : "Inactive"}</span></td>
+                    <td>
+                        <div class="actions">
+                            <button class="small-button button-secondary" data-action="edit" data-id="${employee.id}" type="button">Edit</button>
+                            ${employee.is_active ? `<button class="small-button danger-button" data-action="deactivate" data-id="${employee.id}" type="button">Deactivate</button>` : ""}
+                        </div>
+                    </td>
+                </tr>
+            `).join("");
+        }
+
+        function resetEmployeeForm() {
+            employeeForm.reset();
+            editingEmployeeId = null;
+            document.getElementById("employeeFormTitle").textContent = "Add employee";
+            document.getElementById("saveEmployeeButton").textContent = "Save employee";
+            document.getElementById("cancelEditButton").classList.add("hidden");
+            setMessage(dashboardMessage, "");
+        }
+
+        function editEmployee(employee) {
+            editingEmployeeId = employee.id;
+            for (const [field, value] of Object.entries(employee)) {
+                const input = employeeForm.elements.namedItem(field);
+                if (input) input.value = value == null ? "" : value;
+            }
+            document.getElementById("employeeFormTitle").textContent = "Edit employee";
+            document.getElementById("saveEmployeeButton").textContent = "Save changes";
+            document.getElementById("cancelEditButton").classList.remove("hidden");
+            employeeForm.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+
+        async function saveEmployee(event) {
+            event.preventDefault();
+            const button = document.getElementById("saveEmployeeButton");
+            button.disabled = true;
+            const form = new FormData(employeeForm);
+            const payload = Object.fromEntries(form.entries());
+            payload.department_id = Number(payload.department_id);
+            payload.phone = payload.phone.trim() || null;
+
+            try {
+                await apiRequest(
+                    editingEmployeeId
+                        ? `/admin/employees/${editingEmployeeId}`
+                        : "/admin/employees",
+                    {
+                        method: editingEmployeeId ? "PUT" : "POST",
+                        body: JSON.stringify(payload)
+                    }
+                );
+                resetEmployeeForm();
+                await loadDashboard();
+                setMessage(dashboardMessage, "Employee record saved.");
+            } catch (error) {
+                setMessage(dashboardMessage, error.message, true);
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function addDepartment(inputId = "newDepartmentName", selectId = "employeeDepartment") {
+            const input = document.getElementById(inputId);
+            const message = selectId === "registrationDepartment"
+                ? document.getElementById("registrationReviewMessage")
+                : dashboardMessage;
+            const name = input.value.trim();
+            if (!name) {
+                setMessage(message, "Enter a department name.", true);
+                input.focus();
+                return;
+            }
+
+            try {
+                const result = await apiRequest("/admin/departments", {
+                    method: "POST",
+                    body: JSON.stringify({ name })
+                });
+                input.value = "";
+                await loadDashboard();
+                document.getElementById(selectId).value = String(result.department.id);
+                setMessage(message, "Department added and selected.");
+            } catch (error) {
+                setMessage(message, error.message, true);
+            }
+        }
+
+        async function handleEmployeeAction(event) {
+            const button = event.target.closest("button[data-action]");
+            if (!button) return;
+
+            const employee = employees.find(item => String(item.id) === button.dataset.id);
+            if (!employee) return;
+
+            if (button.dataset.action === "edit") {
+                editEmployee(employee);
+                return;
+            }
+
+            if (button.dataset.action === "deactivate" &&
+                    window.confirm(`Deactivate ${employee.first_name} ${employee.last_name}?`)) {
+                try {
+                    await apiRequest(`/admin/employees/${employee.id}/deactivate`, {
+                        method: "PATCH"
+                    });
+                    if (editingEmployeeId === employee.id) resetEmployeeForm();
+                    await loadDashboard();
+                    setMessage(dashboardMessage, "Employee deactivated.");
+                } catch (error) {
+                    setMessage(dashboardMessage, error.message, true);
+                }
+            }
+        }
+
+        loginForm.addEventListener("submit", handleLogin);
+        employeeForm.addEventListener("submit", saveEmployee);
+        document.getElementById("cancelEditButton").addEventListener("click", resetEmployeeForm);
+        document.getElementById("addDepartmentButton").addEventListener("click", () => {
+            addDepartment();
+        });
+        document.getElementById("addRegistrationDepartmentButton").addEventListener("click", () => {
+            addDepartment("registrationNewDepartmentName", "registrationDepartment");
+        });
+        document.getElementById("employeeRows").addEventListener("click", handleEmployeeAction);
+        document.getElementById("registrationRows").addEventListener("click", handleRegistrationAction);
+        document.getElementById("registrationApprovalForm").addEventListener("submit", approveRegistration);
+        document.getElementById("cancelRegistrationReview").addEventListener("click", () => {
+            document.getElementById("registrationDialog").close();
+        });
+        document.getElementById("leaveRows").addEventListener("click", reviewLeaveRequest);
+        document.getElementById("attendanceForm").addEventListener("submit", saveAttendance);
+        document.getElementById("attendanceDate").addEventListener("change", () => {
+            loadHrManagement().catch(error => setMessage(dashboardMessage, error.message, true));
+        });
+        document.getElementById("leaveStatusFilter").addEventListener("change", () => {
+            loadHrManagement().catch(error => setMessage(dashboardMessage, error.message, true));
+        });
+        document.getElementById("runReportButton").addEventListener("click", runReport);
+        document.getElementById("refreshButton").addEventListener("click", () => {
+            loadDashboard().catch(error => setMessage(dashboardMessage, error.message, true));
+        });
+        document.getElementById("departmentFilter").addEventListener("change", () => {
+            loadDashboard().catch(error => setMessage(dashboardMessage, error.message, true));
+        });
+        document.getElementById("statusFilter").addEventListener("change", () => {
+            loadDashboard().catch(error => setMessage(dashboardMessage, error.message, true));
+        });
+        document.getElementById("registrationStatusFilter").addEventListener("change", () => {
+            loadDashboard().catch(error => setMessage(dashboardMessage, error.message, true));
+        });
+        document.getElementById("searchInput").addEventListener("input", () => {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                loadDashboard().catch(error => setMessage(dashboardMessage, error.message, true));
+            }, 250);
+        });
+        document.getElementById("logoutButton").addEventListener("click", () => {
+            clearSession();
+            showLogin();
+        });
+
+        restoreSession();
+    </script>
+</body>
+</html>
