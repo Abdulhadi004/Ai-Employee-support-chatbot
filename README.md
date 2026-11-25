@@ -110,6 +110,13 @@ JWT_SECRET_KEY=replace-with-a-long-random-secret
 # Optional: creates the initial super administrator
 SUPER_ADMIN_EMAIL=admin@example.com
 SUPER_ADMIN_PASSWORD=replace-with-a-unique-password-of-at-least-12-characters
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_SECURITY=starttls
+SMTP_USERNAME=mychatbot@gmail.com
+SMTP_PASSWORD=your_16_character_app_password
+SMTP_FROM_EMAIL=mychatbot@gmail.com
+APP_BASE_URL=http://127.0.0.1:8000
 ```
 
 Generate a secure JWT secret with:
