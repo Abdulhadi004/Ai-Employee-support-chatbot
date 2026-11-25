@@ -29,6 +29,8 @@ The endpoint accepts only `employee` and `hr_admin`; it cannot create or demote 
 
 The login response and `/me` response include the user's role. `/me` also includes the profile details described above. The JWT carries a role claim, but authorization reads the current role from SQLite so role changes take effect for already-issued tokens. Roles are `employee`, `hr_admin`, and `super_admin`.
 
+An employee whose onboarding request is rejected cannot log in, and rejection immediately invalidates any tokens already issued to that account. Pending registrations and older accounts without an onboarding request remain supported.
+
 ## Admin dashboard
 
 Open `/admin` for the separate HR dashboard; `/` continues to serve the chatbot. HR Admins and Super Admins can create departments, add and edit employee records, search and filter the directory, and deactivate employees. Employee and department data is stored in `employees.db`; the chatbot's existing account and conversation data is unchanged.

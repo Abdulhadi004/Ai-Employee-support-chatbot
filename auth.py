@@ -12,6 +12,8 @@ from pwdlib import PasswordHash
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+from hr_db import is_employee_registration_rejected
+
 
 # Load environment variables
 BASE_DIR = Path(__file__).resolve().parent
@@ -221,6 +223,9 @@ def authenticate_user(email: str, password: str):
     ):
         return None
 
+    if is_employee_registration_rejected(user["id"]):
+        return None
+
     return {
         "id": user["id"],
         "email": user["email"],
@@ -340,6 +345,13 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired login token.",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+
+    if is_employee_registration_rejected(user["id"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This employee registration has been rejected.",
             headers={"WWW-Authenticate": "Bearer"}
         )
 

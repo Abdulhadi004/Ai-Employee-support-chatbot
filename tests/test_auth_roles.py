@@ -17,16 +17,27 @@ class AuthRoleTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         self.database_path = Path(self.temp_dir.name) / "users.db"
+        self.hr_database_path = Path(self.temp_dir.name) / "employees.db"
         self.db_path_patch = patch.object(auth, "DB_PATH", self.database_path)
+        import hr_db
+        self.hr_db = hr_db
+        self.hr_db_path_patch = patch.object(
+            hr_db,
+            "DB_PATH",
+            self.hr_database_path
+        )
         self.email_patch = patch.object(auth, "SUPER_ADMIN_EMAIL", "")
         self.password_patch = patch.object(auth, "SUPER_ADMIN_PASSWORD", "")
         self.db_path_patch.start()
+        self.hr_db_path_patch.start()
         self.email_patch.start()
         self.password_patch.start()
         self.addCleanup(self.db_path_patch.stop)
+        self.addCleanup(self.hr_db_path_patch.stop)
         self.addCleanup(self.email_patch.stop)
         self.addCleanup(self.password_patch.stop)
         auth.initialize_database()
+        self.hr_db.initialize_hr_database()
 
     def test_registered_users_are_employees_and_receive_role_claim(self):
         user = auth.create_user("employee@example.test", "long-password")
@@ -69,6 +80,41 @@ class AuthRoleTests(unittest.TestCase):
         )
 
         self.assertEqual(current_user["role"], "hr_admin")
+
+    def test_rejected_registration_blocks_login_and_existing_tokens(self):
+        user = auth.create_user("employee@example.test", "long-password")
+        registration_id = self.hr_db.create_employee_registration(
+            user_id=user["id"],
+            email=user["email"],
+            first_name="Test",
+            last_name="Employee",
+            phone=None
+        )
+        token = auth.create_access_token(
+            user["id"],
+            user["email"],
+            user["role"]
+        )
+
+        self.assertTrue(
+            self.hr_db.reject_employee_registration(
+                registration_id,
+                reviewer_id=1,
+                rejection_note="Not eligible"
+            )
+        )
+        self.assertIsNone(
+            auth.authenticate_user("employee@example.test", "long-password")
+        )
+        with self.assertRaises(HTTPException) as error:
+            auth.get_current_user(
+                HTTPAuthorizationCredentials(
+                    scheme="Bearer",
+                    credentials=token
+                )
+            )
+
+        self.assertEqual(error.exception.status_code, 401)
 
     def test_role_dependency_rejects_employees(self):
         require_hr_admin = auth.require_roles("hr_admin")

@@ -294,6 +294,21 @@ def get_employee_registration(registration_id: int):
         connection.close()
 
 
+def is_employee_registration_rejected(user_id: int):
+    connection = get_hr_db_connection()
+
+    try:
+        registration = connection.execute("""
+            SELECT status
+            FROM employee_registrations
+            WHERE user_id = ?
+        """, (user_id,)).fetchone()
+        return registration is not None and registration["status"] == "rejected"
+
+    finally:
+        connection.close()
+
+
 def approve_employee_registration(
     registration_id: int,
     first_name: str,
