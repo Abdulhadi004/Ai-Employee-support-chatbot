@@ -60,8 +60,8 @@ vector_store = load_vector_store()
 
 def retrieve_context(
     query,
-    k=3,
-    distance_threshold=1.3
+    k=5,
+    distance_threshold=1.1
 ):
 
     print("\nSearching knowledge base...")
@@ -132,3 +132,12 @@ Content:
 
     return context
 
+if __name__ == "__main__":
+
+    question = input("Enter your question: ")
+
+    context = retrieve_context(question)
+
+    print("\n========== RETRIEVED CONTEXT ==========")
+
+    print(context)

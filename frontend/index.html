@@ -587,6 +587,15 @@
             Login
         </button>
 
+        <button
+            id="resendVerificationButton"
+            class="hidden"
+            type="button"
+            onclick="resendVerificationEmail()"
+        >
+            Resend verification email
+        </button>
+
         <div id="authMessage"></div>
 
         <div class="switch-auth">
@@ -772,6 +781,7 @@ const phoneInput = document.getElementById("phone");
 const registrationFields = document.getElementById("registrationFields");
 const authMessage = document.getElementById("authMessage");
 const authButton = document.getElementById("authButton");
+const resendVerificationButton = document.getElementById("resendVerificationButton");
 
 const chatMessages = document.getElementById("chatMessages");
 const messageInput = document.getElementById("messageInput");
@@ -837,6 +847,7 @@ function toggleAuth() {
     isRegisterMode = !isRegisterMode;
 
     authMessage.textContent = "";
+    resendVerificationButton.classList.add("hidden");
     emailInput.value = "";
     passwordInput.value = "";
     firstNameInput.value = "";
@@ -851,7 +862,7 @@ function toggleAuth() {
             "Create Employee Account";
 
         document.getElementById("authDescription").textContent =
-            "Your name and optional phone will be sent to HR for verification.";
+            "Verify your email first. HR reviews your employee registration afterward.";
 
         authButton.textContent = "Register";
 
@@ -904,27 +915,29 @@ async function handleAuth() {
 
         if (isRegisterMode) {
 
-                if (!firstNameInput.value.trim() || !lastNameInput.value.trim()) {
-                    showAuthMessage("Enter your first and last name.", true);
-                    return;
-                }
+            if (!firstNameInput.value.trim() || !lastNameInput.value.trim()) {
+                showAuthMessage("Enter your first and last name.", true);
+                return;
+            }
 
-                const result = await apiRequest("/register", {
+            const result = await apiRequest("/register", {
                 method: "POST",
-                    body: JSON.stringify({
-                        email,
-                        password,
-                        first_name: firstNameInput.value.trim(),
-                        last_name: lastNameInput.value.trim(),
-                        phone: phoneInput.value.trim() || null
-                    })
+                body: JSON.stringify({
+                    email,
+                    password,
+                    first_name: firstNameInput.value.trim(),
+                    last_name: lastNameInput.value.trim(),
+                    phone: phoneInput.value.trim() || null
+                })
             });
 
             isRegisterMode = true;
             toggleAuth();
+            emailInput.value = email;
+            resendVerificationButton.classList.remove("hidden");
 
             showAuthMessage(
-                    result.message || "Account created. Please login.",
+                result.message || "Account created. Check your email to verify it.",
                 false
             );
 
@@ -945,10 +958,37 @@ async function handleAuth() {
     } catch (error) {
 
         showAuthMessage(error.message, true);
+        if (
+            error.message.toLowerCase().includes("verify your email") ||
+            error.message.toLowerCase().includes("verification email")
+        ) {
+            resendVerificationButton.classList.remove("hidden");
+        }
 
     } finally {
 
         authButton.disabled = false;
+    }
+}
+
+async function resendVerificationEmail() {
+    const email = emailInput.value.trim();
+    if (!email) {
+        showAuthMessage("Enter your email address first.", true);
+        return;
+    }
+
+    resendVerificationButton.disabled = true;
+    try {
+        const result = await apiRequest("/resend-verification", {
+            method: "POST",
+            body: JSON.stringify({ email })
+        });
+        showAuthMessage(result.message, false);
+    } catch (error) {
+        showAuthMessage(error.message, true);
+    } finally {
+        resendVerificationButton.disabled = false;
     }
 }
 
@@ -962,6 +1002,7 @@ function showAuthMessage(message, isError) {
         : "auth-success";
 }
 window.handleAuth = handleAuth;
+window.resendVerificationEmail = resendVerificationEmail;
 
 /* LOAD USER */
 

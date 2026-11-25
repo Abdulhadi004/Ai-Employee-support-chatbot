@@ -8,8 +8,49 @@ os.environ["SUPER_ADMIN_EMAIL"] = ""
 os.environ["SUPER_ADMIN_PASSWORD"] = ""
 
 import auth
+import email_verification
 from fastapi import HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
+
+
+class EmailVerificationDeliveryTests(unittest.TestCase):
+    def test_verification_email_uses_configured_starttls_smtp(self):
+        settings = {
+            "APP_BASE_URL": "https://support.example.test",
+            "SMTP_HOST": "smtp.example.test",
+            "SMTP_PORT": "587",
+            "SMTP_SECURITY": "starttls",
+            "SMTP_USERNAME": "mailer@example.test",
+            "SMTP_PASSWORD": "mail-password",
+            "SMTP_FROM_EMAIL": "mailer@example.test",
+            "SMTP_TIMEOUT_SECONDS": "10"
+        }
+        with patch.dict(os.environ, settings), patch.object(
+            email_verification.smtplib,
+            "SMTP"
+        ) as smtp_class:
+            smtp = smtp_class.return_value.__enter__.return_value
+            email_verification.send_verification_email(
+                "employee@example.test",
+                "one-time-token"
+            )
+
+        smtp_class.assert_called_once_with(
+            "smtp.example.test",
+            587,
+            timeout=10.0
+        )
+        smtp.starttls.assert_called_once()
+        smtp.login.assert_called_once_with(
+            "mailer@example.test",
+            "mail-password"
+        )
+        message = smtp.send_message.call_args.args[0]
+        self.assertEqual(message["To"], "employee@example.test")
+        self.assertIn(
+            "https://support.example.test/verify-email?token=one-time-token",
+            message.get_content()
+        )
 
 
 class AuthRoleTests(unittest.TestCase):
@@ -39,8 +80,58 @@ class AuthRoleTests(unittest.TestCase):
         auth.initialize_database()
         self.hr_db.initialize_hr_database()
 
+    def verify_email(self, user_id):
+        token = auth.create_email_verification_token(user_id)
+        self.assertIsNotNone(token)
+        self.assertTrue(auth.verify_email_token(token))
+        return token
+
+    def approve_registration(self, registration_id):
+        department_id = self.hr_db.create_department("Test Department")
+        return self.hr_db.approve_employee_registration(
+            registration_id=registration_id,
+            first_name="Test",
+            last_name="Employee",
+            employee_code="TEST-001",
+            department_id=department_id,
+            job_title="Tester",
+            hire_date="2026-01-01",
+            reviewer_id=1
+        )
+
     def test_registered_users_are_employees_and_receive_role_claim(self):
         user = auth.create_user("employee@example.test", "long-password")
+        registration_id = self.hr_db.create_employee_registration(
+            user_id=user["id"],
+            email=user["email"],
+            first_name="Test",
+            last_name="Employee",
+            phone=None
+        )
+
+        with self.assertRaises(HTTPException) as unverified_error:
+            auth.authenticate_user("employee@example.test", "long-password")
+        self.assertEqual(unverified_error.exception.status_code, 403)
+
+        self.verify_email(user["id"])
+        with self.assertRaises(HTTPException) as pending_error:
+            auth.authenticate_user("employee@example.test", "long-password")
+        self.assertEqual(pending_error.exception.status_code, 403)
+        pending_token = auth.create_access_token(
+            user["id"],
+            user["email"],
+            user["role"]
+        )
+        with self.assertRaises(HTTPException) as pending_token_error:
+            auth.get_current_user(
+                HTTPAuthorizationCredentials(
+                    scheme="Bearer",
+                    credentials=pending_token
+                )
+            )
+        self.assertEqual(pending_token_error.exception.status_code, 403)
+
+        self.approve_registration(registration_id)
 
         self.assertEqual(user["role"], "employee")
         authenticated_user = auth.authenticate_user(
@@ -63,6 +154,7 @@ class AuthRoleTests(unittest.TestCase):
 
     def test_current_user_uses_latest_database_role(self):
         user = auth.create_user("employee@example.test", "long-password")
+        self.verify_email(user["id"])
         token = auth.create_access_token(
             user["id"],
             user["email"],
@@ -90,22 +182,31 @@ class AuthRoleTests(unittest.TestCase):
             last_name="Employee",
             phone=None
         )
+        self.verify_email(user["id"])
+        self.approve_registration(registration_id)
         token = auth.create_access_token(
             user["id"],
             user["email"],
             user["role"]
         )
 
-        self.assertTrue(
-            self.hr_db.reject_employee_registration(
-                registration_id,
-                reviewer_id=1,
-                rejection_note="Not eligible"
+        connection = self.hr_db.get_hr_db_connection()
+        try:
+            connection.execute(
+                """
+                UPDATE employee_registrations
+                SET status = 'rejected'
+                WHERE id = ?
+                """,
+                (registration_id,)
             )
-        )
-        self.assertIsNone(
+            connection.commit()
+        finally:
+            connection.close()
+
+        with self.assertRaises(HTTPException) as login_error:
             auth.authenticate_user("employee@example.test", "long-password")
-        )
+        self.assertEqual(login_error.exception.status_code, 403)
         with self.assertRaises(HTTPException) as error:
             auth.get_current_user(
                 HTTPAuthorizationCredentials(
@@ -114,7 +215,63 @@ class AuthRoleTests(unittest.TestCase):
                 )
             )
 
-        self.assertEqual(error.exception.status_code, 401)
+        self.assertEqual(error.exception.status_code, 403)
+
+    def test_verification_tokens_are_expiring_and_single_use(self):
+        user = auth.create_user("employee@example.test", "long-password")
+        token = self.verify_email(user["id"])
+        self.assertFalse(auth.verify_email_token(token))
+
+        second_user = auth.create_user("expired@example.test", "long-password")
+        with patch.object(auth, "EMAIL_VERIFICATION_EXPIRE_HOURS", -1):
+            expired_token = auth.create_email_verification_token(
+                second_user["id"]
+            )
+        self.assertFalse(auth.verify_email_token(expired_token))
+
+        third_user = auth.create_user("retry@example.test", "long-password")
+        failed_delivery_token = auth.create_email_verification_token(
+            third_user["id"]
+        )
+        auth.discard_email_verification_token(
+            third_user["id"],
+            failed_delivery_token
+        )
+        self.assertIsNotNone(
+            auth.create_email_verification_token(third_user["id"])
+        )
+
+    def test_existing_users_migrate_as_unverified(self):
+        connection = auth.get_db_connection()
+        try:
+            connection.execute("DROP TABLE users")
+            connection.execute("""
+                CREATE TABLE users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            connection.execute(
+                """
+                INSERT INTO users (email, password_hash, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (
+                    "legacy@example.test",
+                    "legacy-password-hash",
+                    "2026-01-01T00:00:00+00:00"
+                )
+            )
+            connection.commit()
+        finally:
+            connection.close()
+
+        auth.initialize_database()
+        legacy_user = auth.get_user_by_email("legacy@example.test")
+
+        self.assertFalse(legacy_user["email_verified"])
 
     def test_role_dependency_rejects_employees(self):
         require_hr_admin = auth.require_roles("hr_admin")
@@ -128,6 +285,15 @@ class AuthRoleTests(unittest.TestCase):
         with patch.object(auth, "SUPER_ADMIN_EMAIL", "admin@example.test"), \
                 patch.object(auth, "SUPER_ADMIN_PASSWORD", "a-strong-password"):
             auth.initialize_database()
+
+        super_admin_user = auth.get_user_by_email("admin@example.test")
+        self.assertFalse(super_admin_user["email_verified"])
+        with self.assertRaises(HTTPException):
+            auth.authenticate_user(
+                "admin@example.test",
+                "a-strong-password"
+            )
+        self.verify_email(super_admin_user["id"])
 
         with patch.object(auth, "SUPER_ADMIN_EMAIL", "admin@example.test"), \
                 patch.object(auth, "SUPER_ADMIN_PASSWORD", "a-different-password"):
@@ -161,6 +327,8 @@ class ApiAuthRoleTests(unittest.TestCase):
 
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
+        self.hr_db = hr_db
+        self.verification_tokens = {}
         self.patches = [
             patch.object(
                 auth,
@@ -186,10 +354,93 @@ class ApiAuthRoleTests(unittest.TestCase):
 
         self.api = api
         self.client = TestClient(api.api)
+        self.mail_patch = patch.object(
+            api,
+            "send_verification_email",
+            side_effect=lambda email, token: self.verification_tokens.update(
+                {email.lower(): token}
+            )
+        )
+        self.mail_patch.start()
+        self.addCleanup(self.mail_patch.stop)
 
         with patch.object(auth, "SUPER_ADMIN_EMAIL", "admin@example.com"), \
                 patch.object(auth, "SUPER_ADMIN_PASSWORD", "a-strong-password"):
             auth.initialize_database()
+        admin = auth.get_user_by_email("admin@example.com")
+        admin_token = auth.create_email_verification_token(admin["id"])
+        self.assertTrue(auth.verify_email_token(admin_token))
+
+    def verify_registration_email(self, email):
+        response = self.client.post(
+            "/verify-email",
+            json={"token": self.verification_tokens[email.lower()]}
+        )
+        self.assertEqual(response.status_code, 200)
+
+    def verify_existing_account(self, email):
+        user = auth.get_user_by_email(email)
+        token = auth.create_email_verification_token(user["id"])
+        self.assertIsNotNone(token)
+        self.assertTrue(auth.verify_email_token(token))
+
+    def approve_registration(self, email):
+        registration = next(
+            item
+            for item in self.hr_db.list_employee_registrations("all")
+            if item["email"].lower() == email.lower()
+        )
+        department_id = self.hr_db.create_department(
+            f"Test Department {registration['id']}"
+        )
+        return self.hr_db.approve_employee_registration(
+            registration_id=registration["id"],
+            first_name=registration["first_name"],
+            last_name=registration["last_name"],
+            employee_code=f"TEST-{registration['id']:04d}",
+            department_id=department_id,
+            job_title="Tester",
+            hire_date="2026-01-01",
+            reviewer_id=auth.get_user_by_email("admin@example.com")["id"]
+        )
+
+    def register_and_verify_employee(
+        self,
+        email,
+        password,
+        first_name="Test",
+        last_name="Employee",
+        phone=None,
+        approve=True
+    ):
+        response = self.client.post(
+            "/register",
+            json={
+                "email": email,
+                "password": password,
+                "first_name": first_name,
+                "last_name": last_name,
+                "phone": phone
+            }
+        )
+        self.assertEqual(response.status_code, 201)
+        self.verify_registration_email(email)
+        if approve:
+            self.approve_registration(email)
+        return response
+
+    def create_directory_employee(self, email, first_name, last_name, code):
+        department_id = self.hr_db.create_department(f"Department {code}")
+        return self.hr_db.create_employee({
+            "employee_code": code,
+            "first_name": first_name,
+            "last_name": last_name,
+            "email": email,
+            "department_id": department_id,
+            "job_title": "Tester",
+            "hire_date": "2026-01-01",
+            "phone": None
+        })
 
     def test_api_role_assignment_is_super_admin_only_and_database_backed(self):
         registration = self.client.post(
@@ -197,11 +448,15 @@ class ApiAuthRoleTests(unittest.TestCase):
             json={
                 "email": "employee@example.com",
                 "password": "employee-password",
+                "first_name": "Test",
+                "last_name": "Employee",
                 "role": "super_admin"
             }
         )
         self.assertEqual(registration.status_code, 201)
         self.assertEqual(registration.json()["user"]["role"], "employee")
+        self.verify_registration_email("employee@example.com")
+        self.approve_registration("employee@example.com")
 
         employee_login = self.client.post(
             "/login",
@@ -276,32 +531,16 @@ class ApiAuthRoleTests(unittest.TestCase):
             registration.json()["employee_registration_status"],
             "pending"
         )
+        self.assertTrue(registration.json()["email_verification_required"])
         self.assertEqual(registration.json()["user"]["role"], "employee")
-        employee_token = self.client.post(
+        unverified_login = self.client.post(
             "/login",
             json={
                 "email": "new.person@example.com",
                 "password": "employee-password"
             }
-        ).json()["access_token"]
-        employee_headers = {
-            "Authorization": f"Bearer {employee_token}"
-        }
-        pending_profile = self.client.get(
-            "/me",
-            headers=employee_headers
-        ).json()["profile"]
-        self.assertEqual(pending_profile["first_name"], "New")
-        self.assertEqual(pending_profile["email"], "new.person@example.com")
-        self.assertEqual(pending_profile["phone"], "+1-555-0100")
-        self.assertEqual(pending_profile["status"], "pending")
-        self.assertEqual(
-            self.client.get(
-                "/admin/employee-registrations",
-                headers=employee_headers
-            ).status_code,
-            403
         )
+        self.assertEqual(unverified_login.status_code, 403)
 
         admin_token = self.client.post(
             "/login",
@@ -311,6 +550,21 @@ class ApiAuthRoleTests(unittest.TestCase):
             }
         ).json()["access_token"]
         admin_headers = {"Authorization": f"Bearer {admin_token}"}
+        pending = self.client.get(
+            "/admin/employee-registrations",
+            headers=admin_headers
+        ).json()["registrations"]
+        self.assertEqual(pending, [])
+
+        self.verify_registration_email("new.person@example.com")
+        awaiting_hr_login = self.client.post(
+            "/login",
+            json={
+                "email": "new.person@example.com",
+                "password": "employee-password"
+            }
+        )
+        self.assertEqual(awaiting_hr_login.status_code, 403)
         pending = self.client.get(
             "/admin/employee-registrations",
             headers=admin_headers
@@ -348,6 +602,17 @@ class ApiAuthRoleTests(unittest.TestCase):
         employee = approval.json()["employee"]
         self.assertEqual(employee["first_name"], "New")
         self.assertEqual(employee["phone"], "+1-555-0100")
+        employee_login = self.client.post(
+            "/login",
+            json={
+                "email": "new.person@example.com",
+                "password": "employee-password"
+            }
+        )
+        self.assertEqual(employee_login.status_code, 200)
+        employee_headers = {
+            "Authorization": f"Bearer {employee_login.json()['access_token']}"
+        }
         verified_profile = self.client.get(
             "/me",
             headers=employee_headers
@@ -364,30 +629,8 @@ class ApiAuthRoleTests(unittest.TestCase):
         )
 
     def test_employee_directory_crud_search_and_dashboard_stats(self):
-        registration = self.client.post(
-            "/register",
-            json={
-                "email": "employee@example.com",
-                "password": "employee-password"
-            }
-        )
-        self.assertEqual(registration.status_code, 201)
-        employee_token = self.client.post(
-            "/login",
-            json={
-                "email": "employee@example.com",
-                "password": "employee-password"
-            }
-        ).json()["access_token"]
-        employee_headers = {"Authorization": f"Bearer {employee_token}"}
-
-        self.assertEqual(
-            self.client.get(
-                "/admin/dashboard/stats",
-                headers=employee_headers
-            ).status_code,
-            403
-        )
+        auth.create_user("employee@example.com", "employee-password")
+        self.verify_existing_account("employee@example.com")
 
         admin_token = self.client.post(
             "/login",
@@ -425,6 +668,22 @@ class ApiAuthRoleTests(unittest.TestCase):
         )
         self.assertEqual(created.status_code, 201)
         employee_id = created.json()["employee"]["id"]
+
+        employee_token = self.client.post(
+            "/login",
+            json={
+                "email": "employee@example.com",
+                "password": "employee-password"
+            }
+        ).json()["access_token"]
+        employee_headers = {"Authorization": f"Bearer {employee_token}"}
+        self.assertEqual(
+            self.client.get(
+                "/admin/dashboard/stats",
+                headers=employee_headers
+            ).status_code,
+            403
+        )
 
         duplicate = self.client.post(
             "/admin/employees",
@@ -473,20 +732,10 @@ class ApiAuthRoleTests(unittest.TestCase):
         ).json()["access_token"]
         admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
-        self.client.post(
-            "/register",
-            json={
-                "email": "person@example.com",
-                "password": "employee-password"
-            }
-        )
-        self.client.post(
-            "/register",
-            json={
-                "email": "other@example.com",
-                "password": "employee-password"
-            }
-        )
+        auth.create_user("person@example.com", "employee-password")
+        auth.create_user("other@example.com", "employee-password")
+        self.verify_existing_account("person@example.com")
+        self.verify_existing_account("other@example.com")
         department_id = self.client.post(
             "/admin/departments",
             headers=admin_headers,
@@ -653,12 +902,13 @@ class ApiAuthRoleTests(unittest.TestCase):
         self.assertNotIn("Morgan", graph_state["employee_context"])
 
     def test_existing_chat_route_still_works_with_role_aware_user(self):
-        self.client.post(
-            "/register",
-            json={
-                "email": "employee@example.com",
-                "password": "employee-password"
-            }
+        auth.create_user("employee@example.com", "employee-password")
+        self.verify_existing_account("employee@example.com")
+        self.create_directory_employee(
+            "employee@example.com",
+            "Test",
+            "Employee",
+            "CHAT-001"
         )
         login = self.client.post(
             "/login",
@@ -685,15 +935,12 @@ class ApiAuthRoleTests(unittest.TestCase):
         self.assertEqual(response.json()["response"], "Test reply")
 
     def test_profile_questions_are_answered_from_the_authenticated_profile(self):
-        self.client.post(
-            "/register",
-            json={
-                "email": "profile@example.com",
-                "password": "profile-password",
-                "first_name": "Profile",
-                "last_name": "Employee",
-                "phone": "+1-555-0199"
-            }
+        self.register_and_verify_employee(
+            "profile@example.com",
+            "profile-password",
+            first_name="Profile",
+            last_name="Employee",
+            phone="+1-555-0199"
         )
         login = self.client.post(
             "/login",

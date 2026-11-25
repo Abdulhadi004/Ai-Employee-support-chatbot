@@ -1245,7 +1245,7 @@
                     <td>
                         ${registration.status === "pending" ? `
                             <div class="actions">
-                                <button class="small-button" data-registration-action="review" data-id="${registration.id}" type="button">Verify</button>
+                                <button class="small-button" data-registration-action="review" data-id="${registration.id}" type="button">Review</button>
                                 <button class="small-button danger-button" data-registration-action="reject" data-id="${registration.id}" type="button">Reject</button>
                             </div>
                         ` : escapeHtml(registration.rejection_note || "—")}

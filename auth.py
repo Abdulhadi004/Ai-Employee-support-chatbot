@@ -2,6 +2,8 @@
 import os
 import sqlite3
 import jwt
+import hashlib
+import secrets
 
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -12,7 +14,7 @@ from pwdlib import PasswordHash
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from hr_db import is_employee_registration_rejected
+from hr_db import get_employee_approval_status
 
 
 # Load environment variables
@@ -27,6 +29,8 @@ if not JWT_SECRET_KEY:
 
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
+EMAIL_VERIFICATION_EXPIRE_HOURS = 24
+EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS = 60
 SUPER_ADMIN_EMAIL = os.getenv("SUPER_ADMIN_EMAIL", "").strip().lower()
 SUPER_ADMIN_PASSWORD = os.getenv("SUPER_ADMIN_PASSWORD", "")
 USER_ROLES = frozenset({"employee", "hr_admin", "super_admin"})
@@ -67,7 +71,11 @@ def initialize_database():
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'employee',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                email_verified INTEGER NOT NULL DEFAULT 0,
+                email_verification_token_hash TEXT,
+                email_verification_expires_at TEXT,
+                email_verification_sent_at TEXT
             )
         """)
 
@@ -84,6 +92,18 @@ def initialize_database():
                 ALTER TABLE users
                 ADD COLUMN role TEXT NOT NULL DEFAULT 'employee'
             """)
+
+        verification_columns = {
+            "email_verified": "INTEGER NOT NULL DEFAULT 0",
+            "email_verification_token_hash": "TEXT",
+            "email_verification_expires_at": "TEXT",
+            "email_verification_sent_at": "TEXT"
+        }
+        for column_name, column_definition in verification_columns.items():
+            if column_name not in column_names:
+                connection.execute(
+                    f"ALTER TABLE users ADD COLUMN {column_name} {column_definition}"
+                )
 
         placeholders = ", ".join("?" for _ in USER_ROLES)
         connection.execute(
@@ -110,7 +130,12 @@ def initialize_database():
             if super_admin is None:
                 connection.execute(
                     """
-                    INSERT INTO users (email, password_hash, role, created_at)
+                    INSERT INTO users (
+                        email,
+                        password_hash,
+                        role,
+                        created_at
+                    )
                     VALUES (?, ?, 'super_admin', ?)
                     """,
                     (
@@ -198,6 +223,130 @@ def delete_user_account(user_id: int):
 # USER LOGIN
 # ---------------------------------
 
+def get_user_by_email(email: str):
+    connection = get_db_connection()
+
+    try:
+        user = connection.execute("""
+            SELECT id, email, role, email_verified, email_verification_sent_at
+            FROM users
+            WHERE email = ?
+        """, (email.strip().lower(),)).fetchone()
+        return dict(user) if user else None
+
+    finally:
+        connection.close()
+
+
+def create_email_verification_token(user_id: int):
+    now = datetime.now(timezone.utc)
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    expires_at = (now + timedelta(
+        hours=EMAIL_VERIFICATION_EXPIRE_HOURS
+    )).isoformat()
+
+    connection = get_db_connection()
+
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        user = connection.execute("""
+            SELECT email_verified, email_verification_sent_at
+            FROM users
+            WHERE id = ?
+        """, (user_id,)).fetchone()
+
+        if user is None or user["email_verified"]:
+            connection.rollback()
+            return None
+
+        sent_at = user["email_verification_sent_at"]
+        if sent_at:
+            last_sent = datetime.fromisoformat(sent_at)
+            if (now - last_sent).total_seconds() < EMAIL_VERIFICATION_RESEND_INTERVAL_SECONDS:
+                connection.rollback()
+                return None
+
+        connection.execute("""
+            UPDATE users
+            SET
+                email_verification_token_hash = ?,
+                email_verification_expires_at = ?,
+                email_verification_sent_at = ?
+            WHERE id = ?
+        """, (
+            token_hash,
+            expires_at,
+            now.isoformat(),
+            user_id
+        ))
+        connection.commit()
+        return token
+
+    finally:
+        connection.close()
+
+
+def discard_email_verification_token(user_id: int, token: str):
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    connection = get_db_connection()
+
+    try:
+        connection.execute("""
+            UPDATE users
+            SET
+                email_verification_token_hash = NULL,
+                email_verification_expires_at = NULL,
+                email_verification_sent_at = NULL
+            WHERE id = ?
+                AND email_verification_token_hash = ?
+        """, (user_id, token_hash))
+        connection.commit()
+
+    finally:
+        connection.close()
+
+
+def verify_email_token(token: str):
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    now = datetime.now(timezone.utc)
+    connection = get_db_connection()
+
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        user = connection.execute("""
+            SELECT id, email_verification_expires_at
+            FROM users
+            WHERE email_verification_token_hash = ?
+                AND email_verified = 0
+        """, (token_hash,)).fetchone()
+
+        if user is None:
+            connection.rollback()
+            return False
+
+        expires_at = datetime.fromisoformat(
+            user["email_verification_expires_at"]
+        )
+        if expires_at <= now:
+            connection.rollback()
+            return False
+
+        connection.execute("""
+            UPDATE users
+            SET
+                email_verified = 1,
+                email_verification_token_hash = NULL,
+                email_verification_expires_at = NULL
+            WHERE id = ?
+        """, (user["id"],))
+        connection.commit()
+        return True
+
+    finally:
+        connection.close()
+
+
 def authenticate_user(email: str, password: str):
 
     email = email.strip().lower()
@@ -223,8 +372,27 @@ def authenticate_user(email: str, password: str):
     ):
         return None
 
-    if is_employee_registration_rejected(user["id"]):
-        return None
+    if not user["email_verified"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Verify your email address before logging in."
+        )
+
+    if user["role"] == "employee":
+        approval_status = get_employee_approval_status(
+            user["id"],
+            user["email"]
+        )
+        if approval_status != "approved":
+            detail = (
+                "This employee registration has been rejected."
+                if approval_status == "rejected"
+                else "Your employee registration must be approved by HR before logging in."
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=detail
+            )
 
     return {
         "id": user["id"],
@@ -272,11 +440,16 @@ def get_user_by_id(user_id: int):
 
     try:
         user = connection.execute(
-            "SELECT id, email, role FROM users WHERE id = ?",
+            "SELECT id, email, role, email_verified FROM users WHERE id = ?",
             (user_id,)
         ).fetchone()
 
-        return dict(user) if user else None
+        if not user:
+            return None
+
+        user = dict(user)
+        user["email_verified"] = bool(user["email_verified"])
+        return user
 
     finally:
         connection.close()
@@ -348,14 +521,33 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"}
         )
 
-    if is_employee_registration_rejected(user["id"]):
+    if not user["email_verified"]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="This employee registration has been rejected.",
+            detail="Email verification is required.",
             headers={"WWW-Authenticate": "Bearer"}
         )
 
-    return user
+    if user["role"] == "employee":
+        approval_status = get_employee_approval_status(
+            user["id"],
+            user["email"]
+        )
+        if approval_status != "approved":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "This employee registration has been rejected."
+                    if approval_status == "rejected"
+                    else "Your employee registration must be approved by HR."
+                )
+            )
+
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "role": user["role"]
+    }
 
 
 def require_roles(*allowed_roles: str):

@@ -3,6 +3,9 @@ from pathlib import Path
 from uuid import uuid4
 import sqlite3
 import re
+import html
+import smtplib
+import logging
 from fastapi import (
     FastAPI,
     HTTPException,
@@ -19,7 +22,7 @@ from datetime import date, time
 from typing import Literal
 from PIL import Image
 from io import BytesIO
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, EmailStr, Field
 
 from graph import app as graph_app
@@ -29,10 +32,16 @@ from auth import (
     delete_user_account,
     authenticate_user,
     create_access_token,
+    create_email_verification_token,
+    discard_email_verification_token,
+    get_user_by_email,
+    get_user_by_id,
     get_current_user,
     require_roles,
-    set_user_role
+    set_user_role,
+    verify_email_token
 )
+from email_verification import send_verification_email
 
 from chat_db import (
     create_conversation,
@@ -123,6 +132,7 @@ api = FastAPI(
 )
 
 BASE_DIR = Path(__file__).resolve().parent
+logger = logging.getLogger(__name__)
 
 FRONTEND_FILE = BASE_DIR / "frontend" / "index.html"
 ADMIN_FRONTEND_FILE = BASE_DIR / "frontend" / "admin.html"
@@ -137,9 +147,17 @@ initialize_hr_database()
 class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
-    first_name: str | None = Field(default=None, min_length=1, max_length=80)
-    last_name: str | None = Field(default=None, min_length=1, max_length=80)
+    first_name: str = Field(min_length=1, max_length=80)
+    last_name: str = Field(min_length=1, max_length=80)
     phone: str | None = Field(default=None, max_length=32)
+
+
+class VerificationEmailRequest(BaseModel):
+    email: EmailStr
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(min_length=32, max_length=128)
 
 
 class LoginRequest(BaseModel):
@@ -549,25 +567,10 @@ def register(request: RegisterRequest):
     last_name = request.last_name.strip() if request.last_name else None
     phone = request.phone.strip() if request.phone else None
 
-    if (
-        (request.first_name is not None and not first_name)
-        or (request.last_name is not None and not last_name)
-    ):
+    if not first_name or not last_name:
         raise HTTPException(
             status_code=422,
             detail="First and last name cannot be blank."
-        )
-
-    if bool(first_name) != bool(last_name):
-        raise HTTPException(
-            status_code=422,
-            detail="Provide both first and last name to submit an employee profile."
-        )
-
-    if phone and not first_name:
-        raise HTTPException(
-            status_code=422,
-            detail="A phone number can only be submitted with an employee profile."
         )
 
     user = create_user(
@@ -575,39 +578,162 @@ def register(request: RegisterRequest):
         password=request.password
     )
 
-    registration_status = None
-    if first_name and last_name:
-        try:
-            create_employee_registration(
-                user_id=user["id"],
-                email=user["email"],
-                first_name=first_name,
-                last_name=last_name,
-                phone=phone
-            )
-        except sqlite3.IntegrityError as error:
-            delete_user_account(user["id"])
-            raise HTTPException(
-                status_code=409,
-                detail="An employee profile request already exists for this email."
-            ) from error
-        except sqlite3.Error as error:
-            delete_user_account(user["id"])
-            raise HTTPException(
-                status_code=503,
-                detail="Could not save your employee profile. No account was created."
-            ) from error
+    try:
+        create_employee_registration(
+            user_id=user["id"],
+            email=user["email"],
+            first_name=first_name,
+            last_name=last_name,
+            phone=phone
+        )
+    except sqlite3.IntegrityError as error:
+        delete_user_account(user["id"])
+        raise HTTPException(
+            status_code=409,
+            detail="An employee profile request already exists for this email."
+        ) from error
+    except sqlite3.Error as error:
+        delete_user_account(user["id"])
+        raise HTTPException(
+            status_code=503,
+            detail="Could not save your employee profile. No account was created."
+        ) from error
 
-        registration_status = "pending"
+    verification_token = create_email_verification_token(user["id"])
+    if verification_token is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Could not create an email verification link."
+        )
+
+    try:
+        send_verification_email(user["email"], verification_token)
+    except (OSError, RuntimeError, ValueError, smtplib.SMTPException) as error:
+        discard_email_verification_token(user["id"], verification_token)
+        logger.exception(
+            "Email verification delivery failed for user_id=%s",
+            user["id"]
+        )
+        reason = (
+            str(error)
+            if isinstance(error, RuntimeError)
+            else "Check SMTP settings and the server logs for details."
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Your account was created, but the verification email could not "
+                f"be sent. {reason}"
+            )
+        ) from error
 
     return {
         "message": (
-            "Account created. Your employee details are pending HR verification."
-            if registration_status
-            else "Account created successfully."
+            "Account created. Check your email to verify your address. "
+            "HR review begins after verification."
         ),
         "user": user,
-        "employee_registration_status": registration_status
+        "employee_registration_status": "pending",
+        "email_verification_required": True
+    }
+
+
+@api.post("/resend-verification")
+def resend_verification(request: VerificationEmailRequest):
+    user = get_user_by_email(str(request.email))
+    if user and not user["email_verified"]:
+        verification_token = create_email_verification_token(user["id"])
+        if verification_token:
+            try:
+                send_verification_email(user["email"], verification_token)
+            except (OSError, RuntimeError, ValueError, smtplib.SMTPException) as error:
+                discard_email_verification_token(user["id"], verification_token)
+                logger.exception(
+                    "Verification email resend failed for user_id=%s",
+                    user["id"]
+                )
+                reason = (
+                    str(error)
+                    if isinstance(error, RuntimeError)
+                    else "Check SMTP settings and the server logs for details."
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Could not send the verification email. {reason}"
+                ) from error
+
+    return {
+        "message": (
+            "If the address belongs to an unverified account, a verification "
+            "email will be sent."
+        )
+    }
+
+
+@api.get("/verify-email", response_class=HTMLResponse)
+def verify_email_page(token: str = Query(min_length=32, max_length=128)):
+    safe_token = html.escape(token, quote=True)
+    return HTMLResponse(content=f"""
+        <!doctype html>
+        <html lang="en">
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Verify your email</title>
+        </head>
+        <body>
+            <main>
+                <h1>Verify your email address</h1>
+                <p>Click below to confirm that you own this email address.</p>
+                <input id="verificationToken" type="hidden" value="{safe_token}">
+                <button id="verifyButton" type="button">Verify email</button>
+                <p id="verificationResult" role="status"></p>
+            </main>
+            <script>
+                document.getElementById("verifyButton").addEventListener("click", async () => {{
+                    const button = document.getElementById("verifyButton");
+                    const result = document.getElementById("verificationResult");
+                    button.disabled = true;
+                    try {{
+                        const response = await fetch("/verify-email", {{
+                            method: "POST",
+                            headers: {{"Content-Type": "application/json"}},
+                            body: JSON.stringify({{
+                                token: document.getElementById("verificationToken").value
+                            }})
+                        }});
+                        const data = await response.json();
+                        result.textContent = response.ok
+                            ? data.message
+                            : (data.detail || "This link is invalid or expired.");
+                    }} catch (error) {{
+                        result.textContent = "Could not verify your email. Please try again.";
+                    }} finally {{
+                        button.disabled = false;
+                    }}
+                }});
+            </script>
+        </body>
+        </html>
+    """, headers={
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer"
+    })
+
+
+@api.post("/verify-email")
+def verify_email(request: VerifyEmailRequest):
+    if not verify_email_token(request.token):
+        raise HTTPException(
+            status_code=400,
+            detail="This verification link is invalid or has expired."
+        )
+
+    return {
+        "message": (
+            "Email verified. HR will review your employee registration before "
+            "you can log in."
+        )
     }
 
 
@@ -714,8 +840,16 @@ def get_employee_registration_requests(
         alias="status"
     )
 ):
+    registrations = list_employee_registrations(status_filter)
     return {
-        "registrations": list_employee_registrations(status_filter)
+        "registrations": [
+            registration
+            for registration in registrations
+            if (
+                (user := get_user_by_id(registration["user_id"]))
+                and user["email_verified"]
+            )
+        ]
     }
 
 
@@ -738,6 +872,13 @@ def approve_employee_registration_request(
         raise HTTPException(
             status_code=409,
             detail="This employee registration has already been reviewed."
+        )
+
+    user = get_user_by_id(registration["user_id"])
+    if user is None or not user["email_verified"]:
+        raise HTTPException(
+            status_code=409,
+            detail="Verify the employee's email before reviewing this registration."
         )
 
     if registration["email"].lower() == current_user["email"].lower():
@@ -810,6 +951,13 @@ def reject_employee_registration_request(
         raise HTTPException(
             status_code=409,
             detail="This employee registration has already been reviewed."
+        )
+
+    user = get_user_by_id(registration["user_id"])
+    if user is None or not user["email_verified"]:
+        raise HTTPException(
+            status_code=409,
+            detail="Verify the employee's email before reviewing this registration."
         )
 
     if registration["email"].lower() == current_user["email"].lower():
