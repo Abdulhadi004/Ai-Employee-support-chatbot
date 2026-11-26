@@ -713,6 +713,10 @@
             🎵 Audio
         </button>
 
+        <button type="button" id="chooseWebSearchButton">
+    🌐 Web Search
+</button>
+
     </div>
 </div>
 
@@ -769,6 +773,7 @@ const API_URL = "";
 let token = sessionStorage.getItem("access_token");
 let isRegisterMode = false;
 let conversationId = null;
+let webSearchMode = false;
 
 const authScreen = document.getElementById("authScreen");
 const appScreen = document.getElementById("appScreen");
@@ -1145,7 +1150,8 @@ function newChat() {
 
 /* DISPLAY MESSAGE */
 
-function addMessage(content, role, category = "") {
+
+function addMessage(content, role, category = "", sources = []) {
 
     const div = document.createElement("div");
 
@@ -1168,10 +1174,57 @@ function addMessage(content, role, category = "") {
 
     div.appendChild(text);
 
+    // Display web search sources
+    if (sources.length > 0 && role === "assistant") {
+
+        const sourceHeading = document.createElement("p");
+
+        sourceHeading.textContent = "Sources:";
+
+        sourceHeading.style.fontWeight = "bold";
+        sourceHeading.style.marginTop = "12px";
+
+        div.appendChild(sourceHeading);
+
+        const sourceList = document.createElement("ul");
+
+        sources.forEach(source => {
+
+            // Only allow HTTP and HTTPS links
+            try {
+                const url = new URL(source.url);
+
+                if (!["http:", "https:"].includes(url.protocol)) {
+                    return;
+                }
+
+                const li = document.createElement("li");
+
+                const link = document.createElement("a");
+
+                link.href = url.href;
+                link.textContent = source.title || "Visit source";
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+
+                sourceList.appendChild(li);
+                li.appendChild(link);
+
+            } catch (error) {
+                console.log("Invalid source URL:", source.url);
+            }
+        });
+
+        if (sourceList.children.length > 0) {
+            div.appendChild(sourceList);
+        }
+    }
+
     chatMessages.appendChild(div);
 
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
+
 
 function formatExtractedValue(key, value) {
     if (key === "subjects" && Array.isArray(value)) {
@@ -1219,6 +1272,7 @@ function formatExtractedValue(key, value) {
 // ATTACHMENT POPUP
 
 const attachmentButton = document.getElementById("attachmentButton");
+const chooseWebSearchButton = document.getElementById("chooseWebSearchButton");
 const chooseAudioButton = document.getElementById("chooseAudioButton");
 const audioInput = document.getElementById("audioInput");
 attachmentButton.addEventListener("click", () => {
@@ -1230,6 +1284,14 @@ attachmentButton.addEventListener("click", () => {
 chooseAudioButton.addEventListener("click", () => {
     attachmentMenu.hidden = true;
     audioInput.click();
+});
+
+chooseWebSearchButton.addEventListener("click", () => {
+    attachmentMenu.hidden = true;
+
+    webSearchMode = true;
+    messageInput.placeholder = "Enter your web search question...";
+    messageInput.focus();
 });
 
 document.addEventListener("click", (event) => {
@@ -1410,6 +1472,7 @@ async function analyzeSelectedImage() {
 
 
 
+
 /* SEND MESSAGE */
 
 async function sendMessage() {
@@ -1420,7 +1483,9 @@ async function sendMessage() {
         return;
     }
 
-    if (!conversationId) {
+    const isWebSearch = webSearchMode;
+
+    if (!isWebSearch && !conversationId) {
         newChat();
     }
 
@@ -1434,42 +1499,75 @@ async function sendMessage() {
 
     messageInput.value = "";
 
-    statusText.textContent = "AI is thinking...";
+    statusText.textContent = isWebSearch
+        ? "Searching the web..."
+        : "AI is thinking...";
+
     sendButton.disabled = true;
 
     try {
 
-        const data = await apiRequest("/chat", {
-            method: "POST",
-            body: JSON.stringify({
+        // Select endpoint based on current mode
+        const endpoint = isWebSearch
+            ? "/web-search"
+            : "/chat";
+
+        const requestBody = isWebSearch
+            ? {
+                message: message
+            }
+            : {
                 message: message,
                 conversation_id: conversationId
-            })
+            };
+
+        const data = await apiRequest(endpoint, {
+            method: "POST",
+            body: JSON.stringify(requestBody)
         });
 
-        conversationId = data.conversation_id;
-
-        sessionStorage.setItem("conversation_id", conversationId);
-
+        // Display AI response and web sources
         addMessage(
             data.response,
             "assistant",
-            data.category
+            data.category || "",
+            data.sources || []
         );
 
-        await loadConversations();
+        // Update conversation only for normal chat
+        if (!isWebSearch) {
+
+            conversationId = data.conversation_id;
+
+            sessionStorage.setItem(
+                "conversation_id",
+                conversationId
+            );
+
+            await loadConversations();
+        }
 
     } catch (error) {
 
-        addMessage("Error: " + error.message, "assistant");
+        addMessage(
+            "Error: " + error.message,
+            "assistant"
+        );
 
     } finally {
+
+        // Reset web search mode after the request
+        if (isWebSearch) {
+            webSearchMode = false;
+            messageInput.placeholder = "Type your message...";
+        }
 
         statusText.textContent = "";
         sendButton.disabled = false;
         messageInput.focus();
     }
 }
+
 
 
 /* LOAD CONVERSATION LIST */
