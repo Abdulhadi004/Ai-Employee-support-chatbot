@@ -99,6 +99,10 @@ from voice_agent import transcribe_audio
 from tavily import TavilyClient
 import os
 from nodes import llm
+from document_summarizer import (
+    extract_document_text,
+    summarize_document
+)
 
 def format_extracted_information(information: dict) -> str:
     lines = []
@@ -573,6 +577,120 @@ def extract_document(
         if temp_path and Path(temp_path).exists():
             Path(temp_path).unlink()
 
+
+
+@api.post("/summarize-document")
+async def summarize_uploaded_document(
+    file: UploadFile = File(...),
+    task: str = Form("Summarize this document"),
+    conversation_id: str = Form(None),
+    current_user: dict = Depends(get_current_user)
+):
+    allowed_extensions = {".pdf", ".txt"}
+
+    filename = file.filename or "uploaded_document"
+    extension = Path(filename).suffix.lower()
+
+    if extension not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF and TXT files are allowed."
+        )
+
+    if len(task) > 500:
+        raise HTTPException(
+            status_code=400,
+            detail="Instruction is too long."
+        )
+
+    try:
+        # Step 1: Read uploaded file
+        file_bytes = await file.read(10 * 1024 * 1024 + 1)
+
+        if not file_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail="Uploaded file is empty."
+            )
+
+        if len(file_bytes) > 10 * 1024 * 1024:
+            raise HTTPException(
+                status_code=413,
+                detail="File size must not exceed 10 MB."
+            )
+
+        # Step 2: Extract document text
+        try:
+            pages = extract_document_text(file_bytes, filename)
+
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not read this file. Please check that it is a valid PDF or TXT."
+            )
+
+        if not pages or not any(
+            page["text"].strip() for page in pages
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="No readable text found. Scanned PDFs are not supported yet."
+            )
+
+        # Step 3: Generate summary
+        response = summarize_document(pages, task)
+
+        # Step 4: Identify user and conversation
+        user_id = current_user["id"]
+        conversation_id = conversation_id or str(uuid4())
+
+        existing_conversation = get_user_conversation(
+            user_id,
+            conversation_id
+        )
+        print("Current user ID:", user_id)
+        print("Conversation ID:", conversation_id)
+        print("Existing conversation:", existing_conversation)
+
+        if not existing_conversation:
+            print("Creating a new conversation...")
+            create_conversation(
+                user_id=user_id,
+                conversation_id=conversation_id,
+                title=f"Document: {filename}"
+            )
+
+        # Step 5: Save messages
+        save_message(
+            conversation_id=conversation_id,
+            role="user",
+            content=f"Uploaded document: {filename}\nTask: {task}"
+        )
+
+        save_message(
+            conversation_id=conversation_id,
+            role="assistant",
+            content=response
+        )
+
+        return {
+            "message": "Document processed successfully.",
+            "filename": filename,
+            "page_count": len(pages),
+            "response": response,
+            "conversation_id": conversation_id
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        print(f"Document summarization error: {e}")
+
+        raise HTTPException(
+            status_code=500,
+            detail="Could not summarize the uploaded document."
+        )
 
 
 # ========================================
